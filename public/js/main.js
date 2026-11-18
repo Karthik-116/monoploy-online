@@ -589,6 +589,7 @@ function render(prev) {
   show($('#roomView'), view === 'room');
   show($('#roomChip'), view === 'room');
   show($('#leaveBtn'), view === 'room');
+  if (view !== 'room') show($('#tradeTop'), false);
   show($('#nothingBtn'), view === 'room' && !!store.me);
   if (view === 'home') {
     store.boardMapId = null;
@@ -603,6 +604,8 @@ function renderRoom(s, prev) {
   room.classList.toggle('in-game', s.status !== 'lobby');
   $('#inviteLink').value = inviteUrl();
   $('#sideTab').textContent = s.status === 'lobby' ? 'Settings' : 'Trades';
+  const meNow = s.players.find((p) => p.id === store.me);
+  show($('#tradeTop'), s.status === 'playing' && !!meNow && !meNow.bankrupt && s.players.some((p) => p.id !== store.me && !p.bankrupt));
 
   // Board (rebuilt only when the map changes)
   if (store.boardMapId !== s.map.id) {

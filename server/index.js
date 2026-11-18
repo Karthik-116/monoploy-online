@@ -16,7 +16,12 @@ function createServer(options = {}) {
   if (options.indexFile) {
     app.get(['/', '/index.html'], (_req, res) => res.sendFile(options.indexFile));
   } else {
-    app.use(express.static(path.join(__dirname, '..', 'public')));
+    app.use(
+      express.static(path.join(__dirname, '..', 'public'), {
+        // Always check for a newer version of the game files (fonts can be cached for good).
+        setHeaders: (res, file) => res.setHeader('Cache-Control', file.endsWith('.woff2') ? 'public, max-age=31536000, immutable' : 'no-cache'),
+      }),
+    );
   }
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
