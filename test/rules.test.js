@@ -79,3 +79,37 @@ test('rule switches must be booleans', () => {
   g.updateSettings('a', { auction: false, randomizeOrder: true });
   assert.equal(g.settings.auction, false);
 });
+
+test('sell a property back to the bank for half price', () => {
+  const { game, p, own } = setup();
+  own('p0', MAYFAIR);
+  game.act('p0', 'sellProperty', { space: MAYFAIR });
+  assert.equal(game.properties[MAYFAIR].owner, null);
+  assert.equal(p('p0').cash, 1700);
+  assert.throws(() => game.act('p0', 'sellProperty', { space: MAYFAIR }), /don't own/);
+});
+
+test('cannot sell a property with buildings in its set, mortgaged, or out of turn', () => {
+  const { game, own } = setup();
+  own('p0', OLD_KENT, WHITECHAPEL);
+  game.properties[WHITECHAPEL].houses = 1;
+  assert.throws(() => game.act('p0', 'sellProperty', { space: OLD_KENT }), /buildings/);
+  game.properties[WHITECHAPEL].houses = 0;
+  game.properties[OLD_KENT].mortgaged = true;
+  assert.throws(() => game.act('p0', 'sellProperty', { space: OLD_KENT }), /Unmortgage/);
+  own('p1', MAYFAIR);
+  assert.throws(() => game.act('p1', 'sellProperty', { space: MAYFAIR }), /your turn/);
+});
+
+test('selling a property can clear a debt', () => {
+  const { game, dice, p, own } = setup();
+  own('p1', WHITECHAPEL);
+  own('p0', MAYFAIR);
+  p('p0').cash = 1;
+  dice.push([1, 2]);
+  game.act('p0', 'roll');
+  assert.ok(p('p0').cash < 0);
+  game.act('p0', 'sellProperty', { space: MAYFAIR });
+  assert.equal(p('p0').cash, 197);
+  game.act('p0', 'endTurn');
+});

@@ -53,7 +53,8 @@ A person who opens the link after the game has started joins as a **spectator**.
 - In the lobby, tap **Change appearance** to pick your name and colour. The host picks the board, player limit, starting cash and gameplay rules on the right.
 - **Roll dice** on your turn. Doubles give another roll; three doubles in a row sends you to jail.
 - Land on an unowned property: **Buy** it, or send it to **Auction**. Every player can bid; the highest bid wins when everyone else passes or the timer (10 s after the last bid) runs out.
-- Click any space (or the coloured chips under a player) to see its title deed. On your own properties you can **build**, **sell buildings**, **mortgage** and **unmortgage**.
+- Click any space (or a chip under **Your properties**) to see its card with the price. On your own properties you can **build**, **sell buildings**, **sell to the bank** for half the price, **mortgage** and **unmortgage**.
+- Chance and Community Chest cards pop up big for everyone; the latest moves are listed in the middle of the board.
 - Chat with the table in the chat panel; game events appear there too.
 - If you can't pay, your cash goes negative: sell or mortgage until you're back to zero, or **declare bankruptcy**. The last player standing wins, and the host can start a new game.
 
@@ -145,6 +146,6 @@ Deliberate simplifications: no player-to-player trading, unlimited houses and ho
 | `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash?, doubleRentOnSet?, vacationCash?, auction?, noRentInJail?, mortgage?, evenBuild?, randomizeOrder? }` |
 | `chat:send` | `{ text }` |
 | `game:start` / `game:restart` (host) | – |
-| `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt` |
+| `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `sellProperty {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt` |
 
 Every request is acknowledged with `{ ok: true, … }` or `{ ok: false, error }`. The server pushes the full public game state to the room as `state` after every change, and sends `meta` (`{ maps, tokens }`) on connect. Chat arrives as `chat` (one message) and `chat:history` (on join). `secret` is a random per-tab id used to restore your seat after a refresh or reconnect.

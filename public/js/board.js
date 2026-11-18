@@ -83,9 +83,35 @@ export function buildBoard(board, map) {
           <button id="bidPass" class="btn btn-danger" type="button">Pass</button>
         </div>
       </div>
-      <div id="cardPanel" class="drawn-card hidden"></div>
+      <ul id="centerFeed" class="center-feed" aria-label="Latest moves"></ul>
     </div>`;
   board.appendChild(center);
+}
+
+/**
+ * Shrink each square's name until it fits on at most two lines without
+ * breaking words. Runs after build, after fonts load and on resize.
+ */
+export function fitNames(board) {
+  board.querySelectorAll('.tile:not(.corner) .tile-name').forEach((el) => {
+    const tile = el.closest('.tile');
+    const vertical = tile.classList.contains('edge-left') || tile.classList.contains('edge-right');
+    el.style.fontSize = '';
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    const min = size * 0.6;
+    const t = tile.getBoundingClientRect();
+    // A name only gets wider than its square when a single word doesn't fit.
+    const lineRoom = (vertical ? t.height : t.width) + 0.5;
+    for (let k = 0; k < 10; k++) {
+      const r = el.getBoundingClientRect();
+      const lineLen = vertical ? r.height : r.width;
+      const stack = vertical ? r.width : r.height;
+      if (lineLen <= lineRoom && stack <= size * 2.45) break;
+      size *= 0.92;
+      if (size < min) break;
+      el.style.fontSize = `${size}px`;
+    }
+  });
 }
 
 /** Ownership, buildings and highlights. Returns indices that were just bought. */
@@ -132,7 +158,7 @@ export function deedHtml(state, i, meId) {
   const labels = map.labels || {};
   const kind = s.group ? map.groups[s.group].name : { railroad: labels.railroad || 'station', utility: labels.utility || 'utility' }[s.type] || '';
   const kindLabel = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : '';
-  const head = `<div class="deed-head" style="${color ? `--g:${color}` : ''}"><small>${escapeHtml(kindLabel)}</small><h3>${escapeHtml(s.name)}</h3></div>`;
+  const head = `<div class="deed-head" style="${color ? `--g:${color}` : ''}"><small>${escapeHtml(kindLabel)}</small><h3>${escapeHtml(s.name)}</h3>${s.price ? `<span class="deed-price">${m(s.price)}</span>` : ''}</div>`;
   const close = '<button class="btn btn-ghost" data-deed="close" type="button">Close</button>';
 
   if (!prop) {
@@ -184,6 +210,10 @@ export function deedHtml(state, i, meId) {
     if (s.type === 'street') {
       buttons.push(`<button class="btn btn-primary" data-deed="build" data-space="${i}" type="button">Build for ${m(s.houseCost)}</button>`);
       if (prop.houses > 0) buttons.push(`<button class="btn" data-deed="sell" data-space="${i}" type="button">Sell a building +${m(Math.floor(s.houseCost / 2))}</button>`);
+    }
+    const setHasBuildings = s.type === 'street' && map.spaces.some((x, j) => x.type === 'street' && x.group === s.group && state.properties[j].houses > 0);
+    if (!prop.mortgaged && !setHasBuildings) {
+      buttons.push(`<button class="btn btn-danger" data-deed="sellProperty" data-space="${i}" type="button">Sell to bank +${m(Math.floor(s.price / 2))}</button>`);
     }
     if (state.settings.mortgage) {
       buttons.push(

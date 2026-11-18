@@ -1,6 +1,6 @@
 // Client entry point: networking, view switching, lobby, game UI and animation timing.
 // The client only renders server state and sends intents; the server validates everything.
-import { buildBoard, updateTiles, deedHtml } from './board.js';
+import { buildBoard, updateTiles, deedHtml, fitNames } from './board.js';
 import { Dice, ROLL_MS } from './dice.js';
 import { Pawns } from './pawns.js';
 import { THEMES, getTheme, setTheme } from './themes.js';
@@ -21,7 +21,9 @@ const store = {
   boardMapId: null,
   dice: null,
   lastRollId: undefined,
-  lastCardSeq: null,
+  lastCardSeq: undefined,
+  lastFeedId: undefined,
+  cardTimer: null,
   centerTimer: null,
   modal: null, // { type: 'deed' | 'maps' | 'look', index? }
   bankruptArmed: false,
@@ -30,6 +32,30 @@ const store = {
   view: null,
   nothing: { unlocked: false, nextTotal: null },
 };
+
+/* ---------- loading screen ---------- */
+const TIPS = [
+  'Tap any square to see its price and who owns it',
+  'Owning a whole colour set doubles its rent',
+  'Send the room link to friends to play together',
+  'On a phone, tap Zoom to read the board up close',
+  'Three doubles in a row sends you to jail',
+  'Short on cash? Sell or mortgage a property from its card',
+];
+$('#loaderTip').textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
+let loaderTimer = null;
+function showLoader(text = 'Loading game…') {
+  $('#loaderText').textContent = text;
+  $('#loader').classList.remove('done');
+  clearTimeout(loaderTimer);
+  loaderTimer = setTimeout(() => {
+    $('#loaderText').textContent = 'Still connecting… the server may be waking up';
+  }, 9000);
+}
+function hideLoader() {
+  clearTimeout(loaderTimer);
+  $('#loader').classList.add('done');
+}
 
 /* ---------- identity (per tab, survives refresh) ---------- */
 function randomSecret() {
@@ -62,7 +88,9 @@ const act = (type, payload) => send('game:action', { type, payload });
 const settings = (patch) => send('lobby:settings', patch);
 
 async function enterRoom(event, payload) {
+  showLoader(event === 'room:create' ? 'Creating your room…' : 'Joining the game…');
   const res = await request(event, { ...payload, secret });
+  hideLoader();
   if (!res.ok) {
     $('#homeError').textContent = res.error;
     return false;
@@ -79,6 +107,7 @@ async function enterRoom(event, payload) {
 }
 
 function leaveToHome(message = '') {
+  hideCard();
   session.del('mono.room');
   Object.assign(store, { state: null, code: null, me: null, chat: [], boardMapId: null, modal: null, lastRollId: undefined, nothing: { unlocked: false, nextTotal: null } });
   $('#homeError').textContent = message;
@@ -114,14 +143,23 @@ socket.on('nothing:status', (st) => {
 });
 
 socket.on('connect', () => {
+  clearTimeout(reconnectTimer);
   const code = store.code || session.get('mono.room');
   const urlCode = new URLSearchParams(location.search).get('room');
-  if (!code || (urlCode && urlCode.toUpperCase() !== code)) return;
+  if (!code || (urlCode && urlCode.toUpperCase() !== code)) {
+    hideLoader();
+    return;
+  }
   enterRoom('room:join', { code, name: savedName() }).then((ok) => {
     if (!ok) leaveToHome('That game has ended because the server restarted. Create a new room to play again.');
   });
 });
-socket.on('disconnect', () => toast('Connection lost — reconnecting…', 'error'));
+let reconnectTimer = null;
+socket.on('disconnect', () => {
+  toast('Connection lost — reconnecting…', 'error');
+  reconnectTimer = setTimeout(() => showLoader('Reconnecting…'), 1500);
+});
+showLoader('Loading game…');
 
 /* ---------- header ---------- */
 function renderThemeMenu() {
@@ -250,6 +288,12 @@ function scrollToMe() {
   sc.scrollTo({ left: tile.offsetLeft - sc.clientWidth / 2 + tile.offsetWidth / 2, top: tile.offsetTop - sc.clientHeight / 2 + tile.offsetHeight / 2, behavior: 'smooth' });
 }
 
+let fitTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => fitNames($('#board')), 120);
+}).observe($('#board'));
+
 const phone = window.matchMedia('(max-width: 760px)');
 function placeControls() {
   const controls = $('#controls');
@@ -335,7 +379,10 @@ document.addEventListener('change', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') {
+    closeModal();
+    hideCard();
+  }
   if (e.key === 'Enter' && e.target.id === 'bidInput') $('#bidCustom').click();
 });
 $('#appearanceBtn').addEventListener('click', () => openModal({ type: 'look' }));
@@ -475,7 +522,11 @@ function renderRoom(s, prev) {
     store.pawns = store.pawns || new Pawns($('#pawns'), $('#board'));
     store.pawns.reset();
     store.lastRollId = undefined;
+    store.lastCardSeq = undefined;
+    store.lastFeedId = undefined;
     placeControls();
+    requestAnimationFrame(() => fitNames($('#board')));
+    if (document.fonts) document.fonts.ready.then(() => fitNames($('#board')));
   }
 
   // New dice roll? Animate, then move the pawn, then reveal what happened.
@@ -519,7 +570,6 @@ function renderRoom(s, prev) {
     const roller = s.players.find((p) => p.id === (prev ? prev.players[prev.turn.index]?.id : null)) || s.players[s.turn.index];
     $('#status').innerHTML = `<span>${avatar(roller.token)}${roller.id === store.me ? 'You' : escapeHtml(roller.name)} rolled ${s.turn.lastRoll[0] + s.turn.lastRoll[1]}</span>`;
     $('#actions').innerHTML = '';
-    show($('#cardPanel'), false);
     store.centerTimer = setTimeout(() => renderCenter(store.state), landDelay + 120);
   } else {
     renderCenter(s);
@@ -601,22 +651,65 @@ function renderCenter(s) {
   $('#status').innerHTML = status;
   $('#actions').innerHTML = out.join('');
 
-  // Drawn card (flips in when new)
+  renderCenterFeed(s);
+
+  // Chance / Community Chest: pop up a big card when a new one is drawn.
   const card = s.lastCard;
-  show($('#cardPanel'), !!card);
-  if (card) {
-    const who = s.players.find((p) => p.id === card.playerId);
-    $('#cardPanel').innerHTML = `<b>${escapeHtml(card.deckName)}</b>${who && who.id !== store.me ? `${escapeHtml(who.name)}: ` : ''}${escapeHtml(card.text)}`;
-    if (store.lastCardSeq !== card.seq) {
-      $('#cardPanel').classList.remove('flip-in');
-      void $('#cardPanel').offsetWidth;
-      $('#cardPanel').classList.add('flip-in');
-      sfx.card();
-    }
+  if (store.lastCardSeq === undefined) store.lastCardSeq = card ? card.seq : null;
+  else if (card && card.seq !== store.lastCardSeq) {
     store.lastCardSeq = card.seq;
+    showCard(card, s);
   }
   renderAuction(s, me);
 }
+
+/** Which player a log line is about (the longest player name it starts with). */
+function playerInText(s, text) {
+  return s.players.filter((p) => text.startsWith(p.name)).sort((a, b) => b.name.length - a.name.length)[0] || null;
+}
+
+/** The latest moves, newest first, in the middle of the board. */
+function renderCenterFeed(s) {
+  const list = $('#centerFeed');
+  if (!list) return;
+  if (s.status === 'lobby') {
+    list.innerHTML = '';
+    return;
+  }
+  const items = s.log.filter((l) => !/'s turn$/.test(l.text)).slice(-6).reverse();
+  const newest = items[0] ? items[0].id : 0;
+  list.innerHTML = items
+    .map((l, idx) => {
+      const p = playerInText(s, l.text);
+      const text = p ? `<b>${escapeHtml(p.name)}</b>${escapeHtml(l.text.slice(p.name.length))}` : escapeHtml(l.text);
+      const fresh = idx === 0 && store.lastFeedId !== undefined && l.id > store.lastFeedId;
+      return `<li class="${fresh ? 'fresh' : ''}" style="--c:${tokenColor(p?.token)}">${p ? avatar(p.token) : ''}<span>${text}</span></li>`;
+    })
+    .join('');
+  store.lastFeedId = newest;
+}
+
+function showCard(card, s) {
+  const who = s.players.find((p) => p.id === card.playerId);
+  const icon = (s.map.icons || {})[card.deck] || (card.deck === 'chance' ? '❓' : '💰');
+  $('#cardBig').className = `card-big ${card.deck === 'chest' ? 'chest' : 'chance'}`;
+  $('#cardBig').innerHTML = `
+    <div class="card-top"><span class="card-icon" aria-hidden="true">${Array.isArray(icon) ? icon[0] : icon}</span><span class="card-deck">${escapeHtml(card.deckName)}</span></div>
+    <div class="card-body">
+      <p class="card-text">${escapeHtml(card.text)}</p>
+      ${who ? `<div class="card-who">${avatar(who.token)}<span>${who.id === store.me ? 'You drew this card' : `${escapeHtml(who.name)} drew this card`}</span></div>` : ''}
+      <button type="button" class="btn btn-primary" data-card-ok>OK</button>
+    </div>`;
+  show($('#cardShow'), true);
+  sfx.card();
+  clearTimeout(store.cardTimer);
+  store.cardTimer = setTimeout(hideCard, 5500);
+}
+function hideCard() {
+  clearTimeout(store.cardTimer);
+  show($('#cardShow'), false);
+}
+$('#cardShow').addEventListener('click', hideCard);
 
 function renderAuction(s, me) {
   const a = s.auction;

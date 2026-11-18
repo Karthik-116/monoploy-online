@@ -38,6 +38,7 @@ const ACTIONS = {
   pass: 'actPass',
   build: 'actBuild',
   sell: 'actSell',
+  sellProperty: 'actSellProperty',
   mortgage: 'actMortgage',
   unmortgage: 'actUnmortgage',
   payFine: 'actPayFine',
@@ -744,6 +745,21 @@ class Game {
     }
     prop.mortgaged = true;
     this.credit(p, Math.floor(s.price / 2), `mortgaged ${s.name}`);
+  }
+
+  /** Sell a property back to the bank for half its price. It becomes available to buy again. */
+  actSellProperty(p, { space }) {
+    this.requireManage(p, false);
+    const { s, prop } = this.ownedSpace(p, space);
+    if (prop.mortgaged) fail('Unmortgage it before selling');
+    if (s.type === 'street' && this.groupIndices(s.group).some((j) => this.properties[j].houses > 0)) {
+      fail('Sell all buildings in this colour set first');
+    }
+    const value = Math.floor(s.price / 2);
+    Object.assign(prop, { owner: null, houses: 0, mortgaged: false });
+    p.cash += value;
+    this.addLog(`${p.name} sold ${s.name} to the bank for ${this.money(value)}`);
+    this.settleDebt(p);
   }
 
   unmortgageCost(i) {

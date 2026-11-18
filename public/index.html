@@ -21,6 +21,12 @@
   </script>
 </head>
 <body>
+  <!-- Loading screen: visible until the game connects -->
+  <div id="loader" class="loader" role="status" aria-live="polite">
+    <div class="loader-die" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <p id="loaderText" class="loader-text">Loading game…</p>
+    <p class="loader-tip"><span class="tip-tag">Tip</span><span id="loaderTip">Tap any square to see its price and who owns it</span></p>
+  </div>
   <header class="topbar">
     <a class="wordmark" href="/" aria-label="Monopoly Online home"><span class="mark" aria-hidden="true"></span>Monopoly</a>
     <div class="top-actions">
@@ -124,6 +130,10 @@
   </main>
 
   <div id="modal" class="modal hidden"><div id="modalCard" class="modal-card" role="dialog" aria-modal="true"></div></div>
+  <!-- Chance / Community Chest card popup -->
+  <div id="cardShow" class="card-show hidden" aria-live="assertive">
+    <div id="cardBig" class="card-big" role="dialog" aria-label="Card drawn"></div>
+  </div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="fx" class="fx" aria-hidden="true"></div>
 
