@@ -1,0 +1,14 @@
+# Render Blueprint: lets Render set up the game server automatically.
+# In Render: New > Blueprint > pick this repository > Apply.
+services:
+  - type: web
+    name: monopoly-online
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
