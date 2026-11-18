@@ -49,6 +49,7 @@ const ACTIONS = {
   tradeAccept: 'actTradeAccept',
   tradeDecline: 'actTradeDecline',
   tradeCancel: 'actTradeCancel',
+  grantTime: 'actGrantTime',
 };
 
 /** Rule switches the host may flip during a game, with friendly names for the log. */
@@ -225,6 +226,17 @@ class Game {
     const p = this.players.find((x) => x.id === id);
     if (!p) return;
     p.connected = connected;
+    if (this.status === 'playing' && !p.bankrupt) {
+      if (!connected && !p.awayDeadline) {
+        p.awayDeadline = this.now() + this.settings.disconnectSeconds * 1000;
+        p.grantedBy = [];
+        this.addLog(`${p.name} disconnected`);
+      } else if (connected && p.awayDeadline) {
+        p.awayDeadline = null;
+        p.grantedBy = [];
+        this.addLog(`${p.name} reconnected`);
+      }
+    }
     // Hand host rights to someone who is still here.
     if (!connected && this.hostId === id) {
       const next = this.players.find((x) => x.connected && !x.bankrupt);
@@ -241,7 +253,7 @@ class Game {
     this.resetBoard();
     this.nextTotal = chosen;
     for (const p of this.players) {
-      Object.assign(p, { cash: this.settings.startingCash, position: 0, inJail: false, jailTurns: 0, jailCards: [], bankrupt: false, debt: null });
+      Object.assign(p, { cash: this.settings.startingCash, position: 0, inJail: false, jailTurns: 0, jailCards: [], bankrupt: false, debt: null, awayDeadline: null, grantedBy: [] });
     }
     const decks = this.map.cards || {};
     const prep = (d) => (this.shuffleCards ? shuffle(d, this.rng) : d.slice());
@@ -303,7 +315,10 @@ class Game {
   }
 
   newTurn(index, lastRoll = null) {
-    return { index, phase: 'roll', doublesCount: 0, extraRoll: false, lastRoll, pendingSpace: null };
+    return {
+      index, phase: 'roll', doublesCount: 0, extraRoll: false, lastRoll, pendingSpace: null,
+      deadline: this.now() + this.settings.turnSeconds * 1000,
+    };
   }
 
   money(n) {
@@ -927,8 +942,21 @@ class Game {
 
   actBankrupt(p) {
     if (this.auction) fail('Wait for the auction to finish');
+    this.goBankrupt(p);
+  }
+
+  /** Put a player out of the game. toBank: everything returns to the bank (used for timeouts). */
+  goBankrupt(p, { toBank = false, reason = null } = {}) {
+    if (this.auction) {
+      const a = this.auction;
+      a.active = a.active.filter((id) => id !== p.id);
+      if (a.highBidder === p.id) {
+        a.highBidder = null;
+        a.highBid = 0;
+      }
+    }
     const creditor =
-      p.cash < 0 && p.debt && p.debt.to ? this.players.find((x) => x.id === p.debt.to && !x.bankrupt) : null;
+      !toBank && p.cash < 0 && p.debt && p.debt.to ? this.players.find((x) => x.id === p.debt.to && !x.bankrupt) : null;
 
     for (const [key, prop] of Object.entries(this.properties)) {
       if (prop.owner !== p.id) continue;
@@ -945,9 +973,10 @@ class Game {
     if (creditor) creditor.cash -= Math.min(p.debt.amount, -p.cash);
     else if (p.cash < 0 && p.debt && this.settings.vacationCash) this.pot = Math.max(0, this.pot - Math.min(p.debt.amount, -p.cash));
     for (const held of p.jailCards) this.decks[held.deck].push(held.card);
-    Object.assign(p, { bankrupt: true, cash: 0, debt: null, inJail: false, jailTurns: 0, jailCards: [] });
+    Object.assign(p, { bankrupt: true, cash: 0, debt: null, inJail: false, jailTurns: 0, jailCards: [], awayDeadline: null, grantedBy: [] });
     this.trades = this.trades.filter((t) => t.from !== p.id && t.to !== p.id);
-    this.addLog(`${p.name} is bankrupt${creditor ? ` — assets go to ${creditor.name}` : ''}`);
+    this.addLog(reason || `${p.name} is bankrupt${creditor ? ` — assets go to ${creditor.name}` : ''}`);
+    if (this.auction) this.checkAuctionEnd();
 
     const alive = this.players.filter((x) => !x.bankrupt);
     if (alive.length <= 1) {
@@ -955,9 +984,92 @@ class Game {
       this.winnerId = alive[0]?.id ?? null;
       this.turn.phase = 'over';
       if (alive[0]) this.addLog(`🏆 ${alive[0].name} wins the game!`);
+      this.auction = null;
       return;
     }
-    if (this.current() === p) this.nextTurn();
+    if (this.current() === p) {
+      this.auction = null;
+      this.nextTurn();
+    }
+  }
+
+  /* ---------- timers: turn clock and disconnected players ---------- */
+
+  /** +2 minutes for a disconnected player; each other player may grant once per disconnect. */
+  actGrantTime(p, { target }) {
+    const t = this.players.find((x) => x.id === target);
+    if (!t || t.bankrupt || !t.awayDeadline) fail('That player is not waiting to reconnect');
+    if (t === p) fail("You can't add time for yourself");
+    if ((t.grantedBy || []).includes(p.id)) fail(`You already gave ${t.name} extra time`);
+    t.grantedBy = [...(t.grantedBy || []), p.id];
+    t.awayDeadline += this.settings.graceSeconds * 1000;
+    this.addLog(`${p.name} gave ${t.name} 2 more minutes to reconnect`);
+  }
+
+  /** Raise money for a player who is in debt: sell buildings, then mortgage. */
+  autoRaise(p) {
+    const owned = Object.entries(this.properties).filter(([, pr]) => pr.owner === p.id).map(([i]) => Number(i));
+    for (const i of owned) {
+      const pr = this.properties[i];
+      while (p.cash < 0 && pr.houses > 0) {
+        pr.houses -= 1;
+        p.cash += Math.floor(this.map.spaces[i].houseCost / 2);
+      }
+    }
+    for (const i of owned) {
+      const pr = this.properties[i];
+      if (p.cash >= 0) break;
+      if (pr.mortgaged || pr.houses) continue;
+      pr.mortgaged = true;
+      p.cash += Math.floor(this.map.spaces[i].price / 2);
+    }
+    this.settleDebt(p);
+  }
+
+  /** Play out the rest of the current player's turn (used when their clock runs out). */
+  autoFinishTurn() {
+    const p = this.current();
+    const turnRef = this.turn;
+    this.addLog(`${p.name} ran out of time — finishing the turn automatically`);
+    for (let guard = 0; guard < 25 && this.status === 'playing' && this.turn === turnRef; guard++) {
+      if (this.auction) return; // the auction runs on its own clock; we continue once it closes
+      if (p.cash < 0) {
+        this.autoRaise(p);
+        if (p.cash < 0) {
+          this.goBankrupt(p, { toBank: false });
+          return;
+        }
+      }
+      const ph = this.turn.phase;
+      if (ph === 'roll') this.actRoll(p);
+      else if (ph === 'buy') this.actDecline(p);
+      else if (ph === 'end') this.actEndTurn(p);
+      else break;
+    }
+    if (this.status === 'playing' && this.turn === turnRef && !this.auction) this.nextTurn();
+  }
+
+  /**
+   * Called about once a second by the server. Removes players whose reconnect
+   * time ran out and finishes turns whose clock ran out. Returns true if anything changed.
+   */
+  tick() {
+    if (this.status !== 'playing') return false;
+    const now = this.now();
+    let changed = false;
+    for (const p of this.players) {
+      if (!p.bankrupt && p.awayDeadline && now >= p.awayDeadline) {
+        this.goBankrupt(p, { toBank: true, reason: `${p.name} was removed from the game after running out of time` });
+        changed = true;
+        if (this.status !== 'playing') break;
+      }
+    }
+    if (this.status === 'playing' && !this.auction && this.turn.deadline && now >= this.turn.deadline) {
+      this.autoFinishTurn();
+      changed = true;
+    }
+    if (changed) this.version++;
+    return changed;
   }
 
   /* ------------------------------------------------------------------ */
@@ -984,6 +1096,8 @@ class Game {
         jailCards: p.jailCards.length,
         bankrupt: p.bankrupt,
         connected: p.connected,
+        awayDeadline: p.awayDeadline || null,
+        grantedBy: p.grantedBy || [],
       })),
       properties: this.properties,
       turn: this.turn,

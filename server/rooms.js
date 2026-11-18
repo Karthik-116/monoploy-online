@@ -25,6 +25,18 @@ class RoomManager {
 
   attach() {
     this.io.on('connection', (socket) => this.onConnection(socket));
+    // One clock for all rooms: turn timers and disconnected-player timers.
+    this.ticker = setInterval(() => {
+      for (const room of this.rooms.values()) {
+        try {
+          if (room.game.tick()) this.afterChange(room);
+        } catch (err) {
+          console.error('[tick]', err);
+        }
+      }
+    }, 1000);
+    this.ticker.unref?.();
+    this.io.engine?.on?.('close', () => clearInterval(this.ticker));
     return this;
   }
 

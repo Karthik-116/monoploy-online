@@ -29,6 +29,8 @@ export class Pawns {
     const visible = state.status !== 'lobby' ? state.players.filter((p) => !p.bankrupt) : [];
     const current = state.status === 'playing' ? state.players[state.turn.index] : null;
     this.order = state.players.map((p) => p.id);
+    this.jailIdx = state.map.spaces.findIndex((sp) => sp.type === 'jail');
+    this.jailed = new Set(state.players.filter((p) => p.inJail).map((p) => p.id));
 
     for (const [id, el] of this.els) {
       if (!visible.some((p) => p.id === id)) {
@@ -96,30 +98,59 @@ export class Pawns {
     }
   }
 
-  /** Position every pawn on its square, fanning out pawns that share a square. */
+  /**
+   * Position every pawn. Pawns sit on the inner edge of a square (so the name
+   * stays readable) and fan out when several share it. On the jail corner,
+   * players in jail go in the cell and visitors in the outer strip.
+   */
   layout() {
     const groups = new Map();
     for (const id of this.order) {
       if (!this.at.has(id)) continue;
       const sq = this.at.get(id);
-      if (!groups.has(sq)) groups.set(sq, []);
-      groups.get(sq).push(id);
+      let key = String(sq);
+      if (sq === this.jailIdx) key = this.jailed.has(id) ? 'jail:in' : 'jail:visit';
+      if (!groups.has(key)) groups.set(key, { sq, ids: [] });
+      groups.get(key).ids.push(id);
     }
     const unit = this.board.clientWidth / 100; // 1cqw
-    for (const [sq, ids] of groups) {
+    const CELL = { bl: [0.67, 0.33], br: [0.33, 0.33], tl: [0.67, 0.67], tr: [0.33, 0.67] };
+    const VISIT = { bl: [0.5, 0.84], br: [0.5, 0.84], tl: [0.5, 0.16], tr: [0.5, 0.16] };
+    for (const [key, { sq, ids }] of groups) {
       const tile = this.board.querySelector(`.tile[data-index="${sq}"]`);
       if (!tile) continue;
-      const cx = tile.offsetLeft + tile.offsetWidth / 2;
-      const cy = tile.offsetTop + tile.offsetHeight * 0.58;
+      const L = tile.offsetLeft;
+      const T = tile.offsetTop;
+      const W = tile.offsetWidth;
+      const H = tile.offsetHeight;
+      const edge = tile.dataset.edge;
+      const corner = tile.dataset.corner;
+      let ax = L + W / 2;
+      let ay = T + H / 2;
+      let along = 'x'; // direction pawns spread in
+      let gap = 2.5;
+      if (key === 'jail:in' && corner) {
+        [ax, ay] = [L + W * CELL[corner][0], T + H * CELL[corner][1]];
+        gap = 1.9;
+      } else if (key === 'jail:visit' && corner) {
+        [ax, ay] = [L + W * VISIT[corner][0], T + H * VISIT[corner][1]];
+        gap = 2.2;
+      } else if (!corner) {
+        if (edge === 'bottom') ay = T + H * 0.14;
+        else if (edge === 'top') ay = T + H * 0.86;
+        else if (edge === 'left') { ax = L + W * 0.86; along = 'y'; }
+        else if (edge === 'right') { ax = L + W * 0.14; along = 'y'; }
+      }
+      const n = ids.length;
+      const perRow = Math.min(n, 3);
       ids.forEach((id, i) => {
-        const count = ids.length;
-        const cols = count > 2 ? 3 : count;
         const row = Math.floor(i / 3);
-        const col = i % 3;
-        const rows = Math.ceil(count / 3);
-        const dx = count === 1 ? 0 : (col - (Math.min(cols, count - row * 3) - 1) / 2) * unit * 2.6;
-        const dy = count <= 3 ? 0 : (row - (rows - 1) / 2) * unit * 2.6;
-        this.els.get(id).style.transform = `translate(${cx + dx}px, ${cy + dy}px)`;
+        const inRow = Math.min(perRow, n - row * 3);
+        const a = n === 1 ? 0 : ((i % 3) - (inRow - 1) / 2) * unit * gap;
+        const b = n <= 3 ? 0 : (row - (Math.ceil(n / 3) - 1) / 2) * unit * gap;
+        const dx = along === 'x' ? a : b;
+        const dy = along === 'x' ? b : a;
+        this.els.get(id).style.transform = `translate(${ax + dx}px, ${ay + dy}px)`;
       });
     }
   }

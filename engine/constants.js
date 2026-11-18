@@ -10,6 +10,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   jailFine: 50,
   auctionSeconds: 10,
   unmortgageInterest: 0.1,
+  turnSeconds: 276, // 4 min 36 s per turn, then the turn is finished automatically
+  disconnectSeconds: 60, // a disconnected player is removed after this long…
+  graceSeconds: 120, // …plus 2 minutes for every +2 min another player grants
   // Gameplay rules the host can switch on/off in the lobby.
   doubleRentOnSet: true, // unimproved full colour set pays double rent
   vacationCash: false, // taxes & bank payments go to a pot collected on Free Parking

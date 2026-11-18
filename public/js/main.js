@@ -302,7 +302,9 @@ function placeControls() {
   const controls = $('#controls');
   if (!controls) return;
   const target = phone.matches ? $('#dock') : $('.center');
-  if (controls.parentElement !== target) target.appendChild(controls);
+  if (controls.parentElement === target) return;
+  if (phone.matches) target.appendChild(controls);
+  else target.insertBefore(controls, $('#centerFeed'));
 }
 phone.addEventListener('change', placeControls);
 
@@ -333,6 +335,13 @@ document.addEventListener('click', async (e) => {
     } else {
       act(a);
     }
+    return;
+  }
+
+  const grantBtn = t.closest('[data-grant]');
+  if (grantBtn) {
+    const res = await act('grantTime', { target: grantBtn.dataset.grant });
+    if (res.ok) toast('Gave them 2 more minutes to come back');
     return;
   }
 
@@ -701,7 +710,11 @@ function renderCenter(s) {
       const hints = { roll: cur.inJail ? 'is in jail' : 'is about to roll', buy: 'is deciding whether to buy', auction: 'An auction is running', end: 'is finishing their turn' };
       status = myTurn
         ? `<span>${avatar(cur.token)}Your turn</span>${cur.inJail ? '<span class="hint">You are in jail. Roll doubles, pay the fine or use a card.</span>' : ''}`
-        : `<span>${avatar(cur.token)}${escapeHtml(cur.name)}</span><span class="hint">${s.turn.phase === 'auction' ? hints.auction : hints[s.turn.phase] || ''}</span>`;
+        : `<span>${avatar(cur.token)}${escapeHtml(cur.name)}</span><span class="hint">${
+            !cur.connected && cur.awayDeadline
+              ? `<span class="away-note">Not connected — removed in <span data-countdown="${cur.awayDeadline}"></span></span>`
+              : s.turn.phase === 'auction' ? hints.auction : hints[s.turn.phase] || ''
+          }</span>`;
     }
 
     if (s.status === 'playing' && me && !me.bankrupt) {
@@ -734,6 +747,7 @@ function renderCenter(s) {
 
   $('#status').innerHTML = status;
   $('#actions').innerHTML = out.join('');
+  tickClocks();
 
   renderCenterFeed(s);
 
@@ -828,6 +842,31 @@ setInterval(() => {
   if (bar) bar.style.width = `${(left / total) * 100}%`;
 }, 200);
 
+/* ---------- clocks ---------- */
+const mmss = (ms) => {
+  const t = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+function tickClocks() {
+  const s = store.state;
+  if (!s) return;
+  const now = Date.now() + store.clockOffset;
+  const clock = $('#turnClock');
+  if (clock) {
+    const live = s.status === 'playing' && s.turn && s.turn.deadline && !s.auction;
+    show(clock, !!live);
+    if (live) {
+      const left = s.turn.deadline - now;
+      const total = (s.settings.turnSeconds || 276) * 1000;
+      clock.style.setProperty('--p', String(Math.max(0, Math.min(1, left / total))));
+      clock.querySelector('span').textContent = mmss(left);
+      clock.classList.toggle('warn', left < 30_000);
+    }
+  }
+  $$('[data-countdown]').forEach((el) => (el.textContent = mmss(Number(el.dataset.countdown) - now)));
+}
+setInterval(tickClocks, 250);
+
 function renderPlayers(s, prev, floatDelay) {
   const inGame = s.status !== 'lobby';
   $('#playerList').innerHTML = s.players
@@ -837,13 +876,16 @@ function renderPlayers(s, prev, floatDelay) {
         p.inJail ? `In jail (${p.jailTurns}/3)` : '',
         p.jailCards ? `${p.jailCards} jail card${p.jailCards > 1 ? 's' : ''}` : '',
         p.bankrupt ? 'Bankrupt' : '',
-        p.connected ? '' : 'Offline',
+        p.connected || p.bankrupt ? '' : p.awayDeadline ? `<span class="away-note">Offline · removed in <span data-countdown="${p.awayDeadline}"></span></span>` : 'Offline',
       ].filter(Boolean);
+      const meP = s.players.find((x) => x.id === store.me);
+      const canGrant = s.status === 'playing' && p.awayDeadline && !p.bankrupt && meP && !meP.bankrupt && meP.id !== p.id && !(p.grantedBy || []).includes(meP.id);
+      const grant = canGrant ? `<button type="button" class="btn btn-sm grant-btn" data-grant="${p.id}">+2 min</button>` : '';
       const isTurn = s.status === 'playing' && s.turn.index === i;
       const host = p.id === s.hostId ? `<span class="crown">${ICONS.crown}Host</span>` : '';
       return `<li class="player${isTurn ? ' turn' : ''}${p.bankrupt ? ' out' : ''}${p.connected ? '' : ' offline'}" style="--c:${tokenColor(p.token)}" data-pid="${p.id}">
         ${avatar(p.token)}
-        <div style="min-width:0"><div class="player-name"><span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</span>${host}</div>${sub.length ? `<div class="player-sub">${sub.join(' · ')}</div>` : ''}</div>
+        <div style="min-width:0"><div class="player-name"><span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</span>${host}</div>${sub.length ? `<div class="player-sub">${sub.join(' · ')}</div>` : ''}${grant}</div>
         ${inGame ? `<div class="player-cash${p.cash < 0 ? ' neg' : ''}">${money(s.map, p.cash)}</div>` : ''}
       </li>`;
     })

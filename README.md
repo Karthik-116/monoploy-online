@@ -53,11 +53,14 @@ A person who opens the link after the game has started joins as a **spectator**.
 - In the lobby, tap **Change appearance** to pick your name and colour. The host picks the board, player limit, starting cash and gameplay rules on the right.
 - **Roll dice** on your turn. Doubles give another roll; three doubles in a row sends you to jail.
 - Land on an unowned property: **Buy** it, or send it to **Auction**. Every player can bid; the highest bid wins when everyone else passes or the timer (10 s after the last bid) runs out.
-- Click any space (or a chip under **Your properties**) to see its card with the price. On your own properties you can **build**, **sell buildings**, **sell to the bank** for half the price, **mortgage** and **unmortgage**.
+- Click any space (or a property chip in the Properties list) to see its card with the price. On your own properties you can **build**, **sell buildings**, **sell to the bank** for half the price, **mortgage** and **unmortgage**.
 - **Trade** any time from the Trades panel (or the Trade link next to a player): offer any mix of money, properties (buildings and mortgages go with them) and Get Out of Jail Free cards, in either direction. The other player gets a popup to accept or decline; you can cancel an offer you sent. The only check is that both sides still have what's offered when it's accepted.
 - Below Trades, every player's properties are listed with how many they own.
 - The host can flip the gameplay rule switches (including Even build) during a game from the Gameplay rules section.
 - Chance and Community Chest cards pop up big for everyone; the latest moves are listed in the middle of the board.
+- **Timers:** each turn has 4 min 36 s (the ring above the dice). When it runs out, the game finishes the turn: it rolls if needed, skips buying (starting an auction if auctions are on), raises money if the player is in debt, and ends the turn.
+- **Disconnects:** a player who drops has 1 minute to come back (the countdown shows next to their name). Every other player can press **+2 min** once per disconnect. If the time runs out they're removed and their properties go back to the bank.
+- **Jail corner:** players in jail sit in the barred cell; players just visiting sit in the outer strip.
 - Chat with the table in the chat panel; game events appear there too.
 - If you can't pay, your cash goes negative: sell or mortgage until you're back to zero, or **declare bankruptcy**. The last player standing wins, and the host can start a new game.
 
@@ -95,6 +98,8 @@ test/
   engine.test.js   Rent, buying, auctions, jail, cards, building, debt and bankruptcy
   rules.test.js    The host's gameplay rule switches and selling to the bank
   trades.test.js   Trades between players and rule changes mid-game
+  timers.test.js   Turn clock, disconnect clock, +2 min grants, auto-finished turns
+  nothing.test.js  The password-protected Nothing button
   maps.test.js     Every map validates; cards resolve on themed maps
   server.test.js   Two real Socket.IO clients create, join, chat, start and play
 ```
@@ -135,9 +140,9 @@ Themes are per player, saved in the browser, and switched from the palette butto
 
 Implemented: GO salary, dice and doubles, three-doubles jail, jail (pay fine, card, or roll doubles; forced fine on the third failed roll), buying, auctions, street/station/utility rent (doubled rent on unimproved full sets), even building and selling of houses and hotels, mortgages with 10% interest to lift, taxes, 32 Chance / Community Chest cards, debt, bankruptcy to a player or the bank, and a winner.
 
-Host-switchable rules (lobby → Game settings): x2 rent on full sets, vacation cash (taxes and bank fees go to a pot paid out on Free Parking), auctions, no rent while the owner is in jail, mortgages, even building, and random turn order.
+Host-switchable rules (lobby → Game settings, and during a game under Gameplay rules except random order): x2 rent on full sets, vacation cash (taxes and bank fees go to a pot paid out on Free Parking), auctions, no rent while the owner is in jail, mortgages, even building, and random turn order.
 
-Deliberate simplifications: no player-to-player trading, unlimited houses and hotels (no building shortage), and mortgaged properties passed on in bankruptcy carry no extra 10% fee. The "nearest utility" card uses the roll you just made rather than a fresh roll.
+Deliberate simplifications: unlimited houses and hotels (no building shortage), and mortgaged properties passed on in bankruptcy carry no extra 10% fee. The "nearest utility" card uses the roll you just made rather than a fresh roll.
 
 ## Socket events (for extending the client)
 
@@ -150,6 +155,6 @@ Deliberate simplifications: no player-to-player trading, unlimited houses and ho
 | `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash?, doubleRentOnSet?, vacationCash?, auction?, noRentInJail?, mortgage?, evenBuild?, randomizeOrder? }` |
 | `chat:send` | `{ text }` |
 | `game:start` / `game:restart` (host) | – |
-| `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `sellProperty {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt`, `tradePropose {to, give, get}`, `tradeAccept {id}`, `tradeDecline {id}`, `tradeCancel {id}` — a trade side is `{ cash, properties: [spaceIndex], jailCards }` |
+| `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `sellProperty {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt`, `tradePropose {to, give, get}`, `tradeAccept {id}`, `tradeDecline {id}`, `tradeCancel {id}`, `grantTime {target}` — a trade side is `{ cash, properties: [spaceIndex], jailCards }` |
 
 Every request is acknowledged with `{ ok: true, … }` or `{ ok: false, error }`. The server pushes the full public game state to the room as `state` after every change, and sends `meta` (`{ maps, tokens }`) on connect. Chat arrives as `chat` (one message) and `chat:history` (on join). `secret` is a random per-tab id used to restore your seat after a refresh or reconnect.

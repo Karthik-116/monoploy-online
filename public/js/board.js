@@ -23,7 +23,7 @@ const groupColor = (map, s) => (s.group ? map.groups[s.group].color : null);
 /** Builds tiles + the centre area. Call again only when the map changes. */
 export function buildBoard(board, map) {
   const side = map.spaces.length / 4;
-  const tracks = `1.55fr repeat(${side - 1}, 1fr) 1.55fr`;
+  const tracks = `1.35fr repeat(${side - 1}, 1fr) 1.35fr`;
   board.style.gridTemplateColumns = tracks;
   board.style.gridTemplateRows = tracks;
   board.innerHTML = '';
@@ -37,13 +37,19 @@ export function buildBoard(board, map) {
     el.style.gridRow = String(row + 1);
     el.style.gridColumn = String(col + 1);
     el.dataset.index = i;
-    el.setAttribute('aria-label', s.name);
+    el.dataset.edge = edge;
+    if (corner) el.dataset.corner = { 0: 'br', 1: 'bl', 2: 'tl', 3: 'tr' }[i / side];
+    el.setAttribute('aria-label', s.type === 'jail' ? `${s.name} (in jail) and just visiting` : s.name);
     const color = groupColor(map, s);
     if (color) el.style.setProperty('--g', color);
     const icon = s.type === 'street' ? '' : `<span class="tile-icon" aria-hidden="true">${iconFor(s, i, map)}</span>`;
     const cost = s.price ? money(map, s.price) : s.amount ? money(map, s.amount) : '';
 
-    if (corner) {
+    if (corner && s.type === 'jail') {
+      // Split corner: the cell for players in jail, and the outer strip for visitors.
+      el.classList.add('jail', `c-${el.dataset.corner}`);
+      el.innerHTML = `<span class="jail-cell">${icon}<span class="jail-label">${escapeHtml(s.name)}</span></span><span class="jail-visit">Just visiting</span>`;
+    } else if (corner) {
       const sub = { go: `Collect ${map.currency}200`, jail: 'Just visiting', parking: '', gotojail: '' }[s.type] || '';
       el.innerHTML = `<span class="tile-inner">${icon}<span class="tile-name">${escapeHtml(s.name)}</span>${sub ? `<span class="tile-sub">${escapeHtml(sub)}</span>` : ''}</span>`;
     } else {
@@ -64,6 +70,7 @@ export function buildBoard(board, map) {
   center.innerHTML = `
     <div class="center-name">${escapeHtml(map.name)}</div>
     <div id="controls" class="controls">
+      <div id="turnClock" class="turn-clock hidden" aria-label="Time left this turn"><i></i><span></span></div>
       <div id="diceTray" class="dice-tray"></div>
       <div id="status" class="status" aria-live="polite"></div>
       <div id="actions" class="actions"></div>
@@ -83,8 +90,8 @@ export function buildBoard(board, map) {
           <button id="bidPass" class="btn btn-danger" type="button">Pass</button>
         </div>
       </div>
-      <ul id="centerFeed" class="center-feed" aria-label="Latest moves"></ul>
-    </div>`;
+    </div>
+    <ul id="centerFeed" class="center-feed" aria-label="Latest moves"></ul>`;
   board.appendChild(center);
 }
 
