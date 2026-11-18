@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1320" />
+  <meta name="description" content="Play Monopoly with friends in your browser — no download, works on phones." />
+  <title>Monopoly Online</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>" />
+  <link rel="stylesheet" href="/css/themes.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script>
+    // Apply the saved theme before first paint.
+    try { document.documentElement.dataset.theme = localStorage.getItem('mono.theme') || 'dark'; } catch (e) {}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎲 Monopoly Online</div>
+    <div id="roomChip" class="room-chip hidden">
+      Room <b id="roomCodeLabel"></b>
+      <button id="copyLinkTop" class="btn ghost small" type="button">Copy invite</button>
+      <button id="leaveBtn" class="btn ghost small" type="button">Leave</button>
+    </div>
+    <label class="theme-pick">Theme <select id="themeSelect"></select></label>
+  </header>
+
+  <main>
+    <!-- Home: create or join -->
+    <section id="homeView" class="view">
+      <div class="card home-card">
+        <h1>Roll the dice, rule the board</h1>
+        <p class="muted">Create a private room and share the link with 1–5 friends.</p>
+        <label>Your name <input id="homeName" maxlength="20" placeholder="e.g. Asha" autocomplete="nickname" /></label>
+        <button id="createBtn" class="btn primary" type="button">Create a room</button>
+        <div class="divider">— or join a friend —</div>
+        <div class="row">
+          <input id="joinCode" maxlength="5" placeholder="Room code" aria-label="Room code" />
+          <button id="joinBtn" class="btn" type="button">Join</button>
+        </div>
+        <p id="homeError" class="error"></p>
+      </div>
+    </section>
+
+    <!-- Lobby -->
+    <section id="lobbyView" class="view hidden">
+      <div class="lobby-grid">
+        <div class="card">
+          <h2>Room <span id="lobbyCode" class="code"></span></h2>
+          <div class="invite">
+            <input id="inviteLink" readonly aria-label="Invite link" />
+            <button id="copyLink" class="btn" type="button">Copy link</button>
+            <button id="shareLink" class="btn primary hidden" type="button">Share</button>
+          </div>
+          <h3>Players <span id="playerCount" class="muted"></span></h3>
+          <ul id="lobbyPlayers" class="lobby-players"></ul>
+        </div>
+
+        <div class="card">
+          <h3>You</h3>
+          <label>Name <input id="lobbyName" maxlength="20" /></label>
+          <div class="label">Token</div>
+          <div id="tokenPicker" class="token-picker"></div>
+
+          <div class="label">Theme (just for you)</div>
+          <div id="themeSwatches" class="theme-swatches"></div>
+
+          <h3>Game settings <span id="hostNote" class="muted small"></span></h3>
+          <label>Board <select id="mapSelect"></select></label>
+          <div id="mapPreview" class="map-preview"></div>
+          <div class="row">
+            <label>Max players
+              <select id="maxPlayersSelect">
+                <option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option>
+              </select>
+            </label>
+            <label>Starting cash
+              <select id="cashSelect">
+                <option>1000</option><option selected>1500</option><option>2000</option><option>2500</option>
+              </select>
+            </label>
+          </div>
+          <button id="startBtn" class="btn primary big" type="button">Start game</button>
+          <p id="lobbyError" class="error"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game -->
+    <section id="gameView" class="view hidden">
+      <div class="game-layout">
+        <div class="board-col">
+          <div id="boardWrap" class="board-wrap">
+            <div id="board" class="board"></div>
+          </div>
+          <button id="zoomBtn" class="btn small zoom-btn" type="button">🔍 Zoom board</button>
+          <div id="dock" class="dock"></div>
+        </div>
+        <aside class="sidebar">
+          <div class="card">
+            <h3>Players</h3>
+            <ul id="playerList" class="player-list"></ul>
+          </div>
+          <div class="card log-card">
+            <h3>Game log</h3>
+            <ol id="log" class="log"></ol>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal hidden"><div id="modalCard" class="modal-card"></div></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

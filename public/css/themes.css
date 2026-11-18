@@ -1,0 +1,141 @@
+/*
+ * Colour themes. Each theme is just a set of CSS variables, including the
+ * six player/token colours (--p1 … --p6). Add a theme by adding a block here
+ * and an entry in public/js/themes.js.
+ */
+
+:root,
+[data-theme='light'] {
+  --bg: #eef1f6;
+  --bg-accent: radial-gradient(circle at 20% 0%, #dfe7ff 0, transparent 50%), radial-gradient(circle at 100% 100%, #ffe9d6 0, transparent 45%);
+  --surface: #ffffff;
+  --surface-2: #f4f6fa;
+  --text: #1c2333;
+  --muted: #6b7489;
+  --border: #dde2ec;
+  --accent: #3b6cff;
+  --accent-text: #ffffff;
+  --danger: #e5484d;
+  --success: #1f9d55;
+  --board-bg: #cfe6d3;
+  --board-line: #1c2333;
+  --space-bg: #fbfdf9;
+  --space-text: #1c2333;
+  --center-bg: #e3f1e5;
+  --shadow: 0 10px 30px rgba(28, 35, 51, 0.12);
+  --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --p1: #e5484d;
+  --p2: #3b6cff;
+  --p3: #1f9d55;
+  --p4: #f5a524;
+  --p5: #8e4ec6;
+  --p6: #0fa3a3;
+}
+
+[data-theme='dark'] {
+  --bg: #0f1320;
+  --bg-accent: radial-gradient(circle at 15% 0%, #1d2a52 0, transparent 50%), radial-gradient(circle at 100% 100%, #2a1838 0, transparent 45%);
+  --surface: #171c2c;
+  --surface-2: #1f2538;
+  --text: #e8ebf4;
+  --muted: #8d95ab;
+  --border: #2b3249;
+  --accent: #6c8cff;
+  --accent-text: #0b0f1a;
+  --danger: #ff6369;
+  --success: #3dd68c;
+  --board-bg: #10162a;
+  --board-line: #3a4363;
+  --space-bg: #1a2135;
+  --space-text: #dfe4f2;
+  --center-bg: #131a2d;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+  --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --p1: #ff6b6b;
+  --p2: #5c9dff;
+  --p3: #45e09a;
+  --p4: #ffd166;
+  --p5: #c38bff;
+  --p6: #3fe0e0;
+}
+
+[data-theme='neon'] {
+  --bg: #07030f;
+  --bg-accent: radial-gradient(circle at 0% 0%, rgba(255, 0, 204, 0.25) 0, transparent 45%), radial-gradient(circle at 100% 100%, rgba(0, 255, 240, 0.2) 0, transparent 45%);
+  --surface: #120a24;
+  --surface-2: #1b1033;
+  --text: #f6ecff;
+  --muted: #a493c4;
+  --border: #3a1f66;
+  --accent: #ff2bd6;
+  --accent-text: #12001a;
+  --danger: #ff3d6e;
+  --success: #00ffa3;
+  --board-bg: #0a0518;
+  --board-line: #ff2bd6;
+  --space-bg: #140a29;
+  --space-text: #f6ecff;
+  --center-bg: radial-gradient(circle, #1d0f3a 0, #0b0619 70%);
+  --shadow: 0 0 24px rgba(255, 43, 214, 0.35);
+  --font: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --p1: #ff2bd6;
+  --p2: #00f0ff;
+  --p3: #b6ff00;
+  --p4: #ffe600;
+  --p5: #ff7a00;
+  --p6: #9d7bff;
+}
+
+[data-theme='retro'] {
+  --bg: #efe2c6;
+  --bg-accent: repeating-linear-gradient(45deg, rgba(120, 80, 30, 0.04) 0 6px, transparent 6px 12px);
+  --surface: #fbf3df;
+  --surface-2: #f3e6c8;
+  --text: #3b2a1a;
+  --muted: #84694a;
+  --border: #d6c19a;
+  --accent: #b5452b;
+  --accent-text: #fff6e5;
+  --danger: #a8321d;
+  --success: #4f7a28;
+  --board-bg: #c9dbb5;
+  --board-line: #3b2a1a;
+  --space-bg: #fdf7e7;
+  --space-text: #3b2a1a;
+  --center-bg: #d7e6c5;
+  --shadow: 4px 4px 0 rgba(59, 42, 26, 0.35);
+  --font: Georgia, 'Times New Roman', serif;
+  --p1: #b5452b;
+  --p2: #2f5d8a;
+  --p3: #4f7a28;
+  --p4: #c98a1b;
+  --p5: #7a3e6e;
+  --p6: #2c7a72;
+}
+
+[data-theme='ocean'] {
+  --bg: #04202f;
+  --bg-accent: radial-gradient(circle at 50% -10%, #0b4b66 0, transparent 60%);
+  --surface: #072e42;
+  --surface-2: #0a3a52;
+  --text: #e3f6ff;
+  --muted: #86b6c9;
+  --border: #12506b;
+  --accent: #21d4c3;
+  --accent-text: #02232c;
+  --danger: #ff7a7a;
+  --success: #5ef0b5;
+  --board-bg: #063247;
+  --board-line: #1d7697;
+  --space-bg: #0b3d56;
+  --space-text: #e3f6ff;
+  --center-bg: linear-gradient(160deg, #0a4560, #052a3c);
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --p1: #ff8a65;
+  --p2: #4fc3f7;
+  --p3: #aed581;
+  --p4: #ffd54f;
+  --p5: #f48fb1;
+  --p6: #b39ddb;
+}

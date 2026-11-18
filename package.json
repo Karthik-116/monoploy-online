@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build:flat": "node scripts/build-flat.js"
   },
   "engines": {
     "node": ">=18"
@@ -17,6 +18,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "socket.io-client": "^4.8.1"
   }
 }

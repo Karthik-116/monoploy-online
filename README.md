@@ -10,7 +10,7 @@ Socket.IO gives reliable real-time rooms with automatic reconnection and fallbac
 
 ## Play online with friends
 
-To get a link you can send to friends and play from phones, follow **[DEPLOY.md](DEPLOY.md)** — it puts the game on Render's free plan in about 10 minutes with no command line.
+To get a link you can send to friends and play from phones, follow **[DEPLOY.md](DEPLOY.md)** — it puts the game on Render's free plan in about 10 minutes with no command line, using a 4-file upload kit (`npm run build:flat`).
 
 ## Quick start (on your own computer)
 
