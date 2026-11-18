@@ -42,6 +42,8 @@ class RoomManager {
       secrets: new Map(), // client secret -> playerId
       auctionTimer: null,
       cleanupTimer: null,
+      chat: [], // last 60 chat messages
+      chatSeq: 0,
     };
     this.rooms.set(code, room);
     return room;
@@ -91,8 +93,8 @@ class RoomManager {
         if (!map) throw new GameError('Unknown board');
         room.game.chooseMap(playerId, map);
       }
-      const { maxPlayers, startingCash, auctionSeconds } = s;
-      room.game.updateSettings(playerId, { maxPlayers, startingCash, auctionSeconds });
+      const { mapId, ...rest } = s; // eslint-disable-line no-unused-vars
+      room.game.updateSettings(playerId, rest);
       this.broadcast(room);
     });
 
@@ -112,6 +114,19 @@ class RoomManager {
       const { room, playerId } = this.ctx(socket);
       room.game.act(playerId, String(type), payload);
       this.afterChange(room);
+    });
+
+    on('chat:send', ({ text }) => {
+      const { room, playerId } = this.ctx(socket);
+      const msg = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!msg) throw new GameError('Type a message first');
+      const now = Date.now();
+      if (now - (socket.data.lastChat || 0) < 500) throw new GameError('Slow down a little');
+      socket.data.lastChat = now;
+      const entry = { id: ++room.chatSeq, playerId, text: msg, t: now };
+      room.chat.push(entry);
+      if (room.chat.length > 60) room.chat.shift();
+      this.io.to(room.code).emit('chat', entry);
     });
 
     socket.on('disconnect', () => this.detach(socket));
@@ -145,6 +160,7 @@ class RoomManager {
     if (playerId) game.setConnected(playerId, true);
     socket.join(room.code);
     socket.data = { code: room.code, playerId };
+    socket.emit('chat:history', room.chat);
     clearTimeout(room.cleanupTimer);
     this.broadcast(room);
     return { code: room.code, playerId, spectator: !playerId };

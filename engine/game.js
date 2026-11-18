@@ -7,7 +7,7 @@
  * production; tests call it directly with deterministic dice.
  */
 
-const { TOKENS, DEFAULT_SETTINGS, OWNABLE } = require('./constants');
+const { TOKENS, DEFAULT_SETTINGS, BOOL_SETTINGS, OWNABLE } = require('./constants');
 const { CHANCE, CHEST, shuffle } = require('./cards');
 
 class GameError extends Error {
@@ -101,6 +101,7 @@ class Game {
     this.lastCard = null;
     this.winnerId = null;
     this.decks = null;
+    this.pot = 0; // Vacation cash pot
   }
 
   applySettings(s = {}) {
@@ -116,6 +117,11 @@ class Game {
     }
     if (s.startingCash !== undefined) this.settings.startingCash = intIn(s.startingCash, 500, 5000, 'Starting cash must be 500–5000');
     if (s.auctionSeconds !== undefined) this.settings.auctionSeconds = intIn(s.auctionSeconds, 3, 60, 'Auction time must be 3–60 seconds');
+    for (const key of BOOL_SETTINGS) {
+      if (s[key] === undefined) continue;
+      if (typeof s[key] !== 'boolean') fail(`${key} must be on or off`);
+      this.settings[key] = s[key];
+    }
   }
 
   requireHostLobby(byId) {
@@ -206,6 +212,7 @@ class Game {
     const decks = this.map.cards || {};
     const prep = (d) => (this.shuffleCards ? shuffle(d, this.rng) : d.slice());
     this.decks = { chance: prep(decks.chance || CHANCE), chest: prep(decks.chest || CHEST) };
+    if (this.settings.randomizeOrder) this.players = shuffle(this.players, this.rng);
     this.status = 'playing';
     this.turn = this.newTurn(0);
     this.addLog(`Game started on ${this.map.name}. ${this.players[0].name} goes first.`);
@@ -270,7 +277,7 @@ class Game {
   }
 
   addLog(text) {
-    this.log.push({ id: ++this.logSeq, text });
+    this.log.push({ id: ++this.logSeq, text, t: this.now() });
     if (this.log.length > 200) this.log.splice(0, this.log.length - 200);
   }
 
@@ -295,7 +302,7 @@ class Game {
     if (!prop || !prop.owner || prop.mortgaged) return 0;
     if (s.type === 'street') {
       if (prop.houses > 0) return s.rent[prop.houses];
-      return this.ownsGroup(prop.owner, s.group) ? s.rent[0] * 2 : s.rent[0];
+      return this.settings.doubleRentOnSet && this.ownsGroup(prop.owner, s.group) ? s.rent[0] * 2 : s.rent[0];
     }
     if (s.type === 'railroad') {
       const n = this.countOwned(prop.owner, 'railroad');
@@ -320,6 +327,7 @@ class Game {
     if (!amount) return;
     from.cash -= amount;
     if (to) to.cash += amount;
+    else if (this.settings.vacationCash) this.pot += amount;
     this.addLog(`${from.name} paid ${this.money(amount)}${to ? ` to ${to.name}` : ''} (${reason})`);
     if (from.cash < 0) {
       const toId = to ? to.id : null;
@@ -400,12 +408,23 @@ class Game {
             break;
           }
           const owner = this.getPlayer(prop.owner);
+          if (this.settings.noRentInJail && owner.inJail) {
+            this.addLog(`${owner.name} is in jail — no rent for ${s.name}`);
+            break;
+          }
           this.pay(p, owner, this.rentFor(i, this.diceTotal(), opts), `rent for ${s.name}`);
         }
         break;
       }
+      case 'parking':
+        if (this.settings.vacationCash && this.pot > 0) {
+          const pot = this.pot;
+          this.pot = 0;
+          this.credit(p, pot, 'Vacation cash');
+        }
+        break;
       default:
-        break; // go, jail (visiting), parking
+        break; // go, jail (visiting)
     }
   }
 
@@ -593,6 +612,13 @@ class Game {
   actDecline(p) {
     this.requireTurn(p, 'buy');
     const i = this.turn.pendingSpace;
+    if (!this.settings.auction) {
+      this.addLog(`${p.name} passed on ${this.map.spaces[i].name}`);
+      this.turn.pendingSpace = null;
+      this.turn.phase = 'moving';
+      this.advancePhase();
+      return;
+    }
     this.auction = {
       space: i,
       highBid: 0,
@@ -667,7 +693,7 @@ class Game {
     if (group.some((j) => this.properties[j].mortgaged)) fail('Unmortgage the colour set first');
     if (prop.houses >= 5) fail('This property already has a hotel');
     const min = Math.min(...group.map((j) => this.properties[j].houses));
-    if (prop.houses > min) fail('Build evenly across the colour set');
+    if (this.settings.evenBuild && prop.houses > min) fail('Build evenly across the colour set');
     if (p.cash < s.houseCost) fail(`You need ${this.money(s.houseCost)} to build`);
     p.cash -= s.houseCost;
     prop.houses += 1;
@@ -679,12 +705,13 @@ class Game {
     const { s, prop } = this.ownedSpace(p, space);
     if (!prop.houses) fail('There are no buildings to sell');
     const max = Math.max(...this.groupIndices(s.group).map((j) => this.properties[j].houses));
-    if (prop.houses < max) fail('Sell evenly across the colour set');
+    if (this.settings.evenBuild && prop.houses < max) fail('Sell evenly across the colour set');
     prop.houses -= 1;
     this.credit(p, Math.floor(s.houseCost / 2), `sold a building on ${s.name}`);
   }
 
   actMortgage(p, { space }) {
+    if (!this.settings.mortgage) fail('Mortgages are turned off in this game');
     this.requireManage(p, false);
     const { s, prop } = this.ownedSpace(p, space);
     if (prop.mortgaged) fail('Already mortgaged');
@@ -754,6 +781,7 @@ class Game {
     }
     // The creditor was credited the full payment; take back what the debtor couldn't cover.
     if (creditor) creditor.cash -= Math.min(p.debt.amount, -p.cash);
+    else if (p.cash < 0 && p.debt && this.settings.vacationCash) this.pot = Math.max(0, this.pot - Math.min(p.debt.amount, -p.cash));
     for (const held of p.jailCards) this.decks[held.deck].push(held.card);
     Object.assign(p, { bankrupt: true, cash: 0, debt: null, inJail: false, jailTurns: 0, jailCards: [] });
     this.addLog(`${p.name} is bankrupt${creditor ? ` — assets go to ${creditor.name}` : ''}`);
@@ -799,6 +827,7 @@ class Game {
       auction: this.auction,
       lastCard: this.lastCard,
       winnerId: this.winnerId,
+      pot: this.pot,
       unmortgageInterest: this.settings.unmortgageInterest,
       log: this.log.slice(-60),
       serverTime: this.now(),

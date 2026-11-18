@@ -29,11 +29,11 @@ test.describe('lobby & turn order', () => {
 
   test('respects max players and unique tokens', () => {
     const g = new Game({ map: getMap('classic-london'), settings: { maxPlayers: 2 } });
-    g.addPlayer({ id: 'a', token: '🚗' });
-    const b = g.addPlayer({ id: 'b', token: '🚗' });
-    assert.notEqual(b.token, '🚗');
+    g.addPlayer({ id: 'a', token: 'blue' });
+    const b = g.addPlayer({ id: 'b', token: 'blue' });
+    assert.notEqual(b.token, 'blue');
     assert.throws(() => g.addPlayer({ id: 'c' }), /full/);
-    assert.throws(() => g.updatePlayer('b', { token: '🚗' }), /taken/);
+    assert.throws(() => g.updatePlayer('b', { token: 'blue' }), /taken/);
   });
 
   test('players cannot act out of turn', () => {

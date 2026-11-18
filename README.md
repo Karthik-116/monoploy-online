@@ -2,6 +2,7 @@
 
 A real-time multiplayer Monopoly-style board game for the browser, inspired by richup.io.
 Create a room, share the link, and play with 2–6 friends on one of four themed boards in one of five colour themes.
+The interface follows richup.io's layout: invite link and chat on the left, the board in the middle (the lobby lives on the board too), players and game settings on the right. Dice tumble in 3D and pawns hop square by square.
 
 ## Stack
 
@@ -49,9 +50,11 @@ A person who opens the link after the game has started joins as a **spectator**.
 
 ## How to play
 
+- In the lobby, tap **Change appearance** to pick your name and colour. The host picks the board, player limit, starting cash and gameplay rules on the right.
 - **Roll dice** on your turn. Doubles give another roll; three doubles in a row sends you to jail.
 - Land on an unowned property: **Buy** it, or send it to **Auction**. Every player can bid; the highest bid wins when everyone else passes or the timer (10 s after the last bid) runs out.
 - Click any space (or the coloured chips under a player) to see its title deed. On your own properties you can **build**, **sell buildings**, **mortgage** and **unmortgage**.
+- Chat with the table in the chat panel; game events appear there too.
 - If you can't pay, your cash goes negative: sell or mortgage until you're back to zero, or **declare bankruptcy**. The last player standing wins, and the host can start a new game.
 
 ## Project structure
@@ -71,16 +74,24 @@ server/
   rooms.js         Rooms, join codes, reconnection, spectators, auction timer
 public/          Browser client (no build step)
   index.html
-  css/themes.css   Colour themes as CSS variables (incl. token colours --p1..--p6)
-  css/style.css    Layout, board, lobby, modals
-  js/main.js       Networking, lobby and game UI
-  js/board.js      Board rendering, dice, title deeds
+  css/themes.css   Colour themes as CSS variables (incl. the 8 avatar colours --t-red … --t-pink)
+  css/style.css    Layout, board, panels, dice, pawns, phone layout
+  fonts/           Self-hosted Nunito + Oswald (OFL)
+  js/main.js       Networking, lobby/game UI, animation timing
+  js/board.js      Board tiles, centre area, title deeds
+  js/dice.js       3D CSS dice
+  js/pawns.js      Pawn layer with square-by-square hops
+  js/sound.js      Synthesized sound effects (mute button in the header)
   js/themes.js     Theme list + persistence
+  js/icons.js      Inline SVG icons
   js/ui.js         DOM helpers
+scripts/
+  build-flat.js    Builds a 4-file copy for hosting (npm run build:flat)
 test/
   engine.test.js   Rent, buying, auctions, jail, cards, building, debt and bankruptcy
+  rules.test.js    The host's gameplay rule switches
   maps.test.js     Every map validates; cards resolve on themed maps
-  server.test.js   Two real Socket.IO clients create, join, start and play
+  server.test.js   Two real Socket.IO clients create, join, chat, start and play
 ```
 
 ## Adding a board
@@ -110,16 +121,18 @@ For full control, export an object with your own `spaces` array instead (any mul
 
 ## Adding a colour theme
 
-1. Add a `[data-theme='mytheme'] { … }` block to `public/css/themes.css` (copy an existing one and change the variables, including the token colours `--p1`…`--p6`).
-2. Add `{ id: 'mytheme', name: 'My Theme', swatch: [bg, accent] }` to `public/js/themes.js`.
+1. Add a `[data-theme='mytheme'] { … }` block to `public/css/themes.css` (copy an existing one and change the variables, including the avatar colours `--t-red` … `--t-pink`).
+2. Add `{ id: 'mytheme', name: 'My theme', swatch: [panel, accent] }` to `public/js/themes.js`.
 
-Themes are per-player and saved in the browser, and can be switched from the lobby or the header at any time.
+Themes are per player, saved in the browser, and switched from the palette button in the header at any time. Bundled: Night, Daylight, Neon arcade, Retro paper, Deep ocean.
 
 ## Rules notes
 
 Implemented: GO salary, dice and doubles, three-doubles jail, jail (pay fine, card, or roll doubles; forced fine on the third failed roll), buying, auctions, street/station/utility rent (doubled rent on unimproved full sets), even building and selling of houses and hotels, mortgages with 10% interest to lift, taxes, 32 Chance / Community Chest cards, debt, bankruptcy to a player or the bank, and a winner.
 
-Deliberate simplifications: no player-to-player trading, unlimited houses and hotels (no building shortage), Free Parking does nothing, and mortgaged properties passed on in bankruptcy carry no extra 10% fee. The "nearest utility" card uses the roll you just made rather than a fresh roll.
+Host-switchable rules (lobby → Game settings): x2 rent on full sets, vacation cash (taxes and bank fees go to a pot paid out on Free Parking), auctions, no rent while the owner is in jail, mortgages, even building, and random turn order.
+
+Deliberate simplifications: no player-to-player trading, unlimited houses and hotels (no building shortage), and mortgaged properties passed on in bankruptcy carry no extra 10% fee. The "nearest utility" card uses the roll you just made rather than a fresh roll.
 
 ## Socket events (for extending the client)
 
@@ -128,9 +141,10 @@ Deliberate simplifications: no player-to-player trading, unlimited houses and ho
 | `room:create` | `{ name, secret }` |
 | `room:join` | `{ code, name, secret }` |
 | `room:leave` | – |
-| `lobby:update` | `{ name?, token? }` |
-| `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash? }` |
+| `lobby:update` | `{ name?, token? }` — `token` is a colour id: red, orange, yellow, green, teal, blue, purple, pink |
+| `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash?, doubleRentOnSet?, vacationCash?, auction?, noRentInJail?, mortgage?, evenBuild?, randomizeOrder? }` |
+| `chat:send` | `{ text }` |
 | `game:start` / `game:restart` (host) | – |
 | `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt` |
 
-Every request is acknowledged with `{ ok: true, … }` or `{ ok: false, error }`. The server pushes the full public game state to the room as `state` after every change, and sends `meta` (`{ maps, tokens }`) on connect. `secret` is a random per-tab id used to restore your seat after a refresh or reconnect.
+Every request is acknowledged with `{ ok: true, … }` or `{ ok: false, error }`. The server pushes the full public game state to the room as `state` after every change, and sends `meta` (`{ maps, tokens }`) on connect. Chat arrives as `chat` (one message) and `chat:history` (on join). `secret` is a random per-tab id used to restore your seat after a refresh or reconnect.

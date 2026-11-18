@@ -47,6 +47,12 @@ test('two clients can play over Socket.IO', async () => {
     assert.equal(outOfTurn.ok, false);
     assert.match(outOfTurn.error, /not your turn/);
 
+    const heard = new Promise((resolve) => b.once('chat', resolve));
+    assert.equal((await emit(a, 'chat:send', { text: '  good luck  ' })).ok, true);
+    const msg = await heard;
+    assert.equal(msg.text, 'good luck');
+    assert.equal(msg.playerId, created.playerId);
+
     const rolled = nextState(b, (st) => st.turn.lastRoll !== null);
     assert.equal((await emit(a, 'game:action', { type: 'roll' })).ok, true);
     assert.ok((await rolled).players[0].position > 0 || (await rolled).players[0].inJail);

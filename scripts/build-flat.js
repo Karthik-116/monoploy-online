@@ -47,9 +47,17 @@ const js = esbuild.buildSync({
   write: false,
   logLevel: 'error',
 }).outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const css = ['themes.css', 'style.css'].map((f) => fs.readFileSync(path.join(root, 'public', 'css', f), 'utf8')).join('\n');
+const css = ['themes.css', 'style.css']
+  .map((f) => fs.readFileSync(path.join(root, 'public', 'css', f), 'utf8'))
+  .join('\n')
+  // Inline the self-hosted fonts so the page stays a single file.
+  .replace(/url\('\/fonts\/([\w.-]+\.woff2)'\)/g, (_, file) => {
+    const data = fs.readFileSync(path.join(root, 'public', 'fonts', file)).toString('base64');
+    return `url(data:font/woff2;base64,${data})`;
+  });
 let html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
 html = html
+  .replace(/\s*<link rel="preload"[^>]*>/g, '')
   .replace(/\s*<link rel="stylesheet" href="\/css\/themes.css" \/>/, '')
   .replace(/<link rel="stylesheet" href="\/css\/style.css" \/>/, () => `<style>\n${css}\n</style>`)
   .replace(/<script type="module" src="\/js\/main.js"><\/script>/, () => `<script>\n${js}\n</script>`);
