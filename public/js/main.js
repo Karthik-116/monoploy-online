@@ -31,6 +31,9 @@ const store = {
   sideKey: '',
   view: null,
   nothing: { unlocked: false, nextTotal: null },
+  tradeDraft: null,
+  seenTrades: null, // Set of trade ids already noticed
+  rulesOpen: false,
 };
 
 /* ---------- loading screen ---------- */
@@ -109,7 +112,7 @@ async function enterRoom(event, payload) {
 function leaveToHome(message = '') {
   hideCard();
   session.del('mono.room');
-  Object.assign(store, { state: null, code: null, me: null, chat: [], boardMapId: null, modal: null, lastRollId: undefined, nothing: { unlocked: false, nextTotal: null } });
+  Object.assign(store, { state: null, code: null, me: null, chat: [], boardMapId: null, modal: null, lastRollId: undefined, nothing: { unlocked: false, nextTotal: null }, tradeDraft: null, seenTrades: null });
   $('#homeError').textContent = message;
   history.replaceState(null, '', location.pathname);
   render(null);
@@ -346,7 +349,10 @@ document.addEventListener('click', async (e) => {
   if (sw && !sw.disabled) return settings({ [sw.dataset.setting]: sw.getAttribute('aria-checked') !== 'true' });
 
   const open = t.closest('[data-open]');
-  if (open) return openModal({ type: open.dataset.open });
+  if (open) {
+    if (open.dataset.open === 'trade') store.tradeDraft = newTradeDraft();
+    return openModal({ type: open.dataset.open });
+  }
   const mapBtn = t.closest('[data-map]');
   if (mapBtn && !mapBtn.disabled) {
     await settings({ mapId: mapBtn.dataset.map });
@@ -412,6 +418,75 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+/* ---------- trades ---------- */
+function noticeTrades(s) {
+  const ids = s.trades.map((t) => t.id);
+  if (!store.seenTrades) {
+    store.seenTrades = new Set(ids); // don't pop up offers that existed before we joined
+    return;
+  }
+  for (const t of s.trades) {
+    if (store.seenTrades.has(t.id)) continue;
+    store.seenTrades.add(t.id);
+    if (t.to !== store.me) continue;
+    const from = s.players.find((p) => p.id === t.from);
+    sfx.turn();
+    if (!store.modal) openModal({ type: 'tradeView', id: t.id });
+    else toast(`${from ? from.name : 'Someone'} sent you a trade offer — see Trades`);
+  }
+}
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  const withBtn = t.closest('[data-trade-with]');
+  if (withBtn) {
+    store.tradeDraft = newTradeDraft(withBtn.dataset.tradeWith);
+    return openModal({ type: 'trade' });
+  }
+  const toBtn = t.closest('[data-trade-to]');
+  if (toBtn && store.tradeDraft) {
+    store.tradeDraft = { ...newTradeDraft(toBtn.dataset.tradeTo), give: store.tradeDraft.give };
+    return renderModal();
+  }
+  const prop = t.closest('[data-trade-prop]');
+  if (prop && store.tradeDraft) {
+    const set = store.tradeDraft[prop.dataset.tradeProp].properties;
+    const i = Number(prop.dataset.space);
+    if (set.has(i)) set.delete(i);
+    else set.add(i);
+    prop.setAttribute('aria-pressed', String(set.has(i)));
+    return;
+  }
+  if (t.closest('[data-trade-send]') && store.tradeDraft) {
+    const d = store.tradeDraft;
+    const side = (x) => ({ cash: Number(x.cash) || 0, properties: [...x.properties], jailCards: Number(x.jailCards) || 0 });
+    const res = await act('tradePropose', { to: d.to, give: side(d.give), get: side(d.get) });
+    if (res.ok) {
+      store.tradeDraft = null;
+      closeModal();
+      toast('Trade offer sent');
+    }
+    return;
+  }
+  for (const [attr, type] of [['tradeAccept', 'tradeAccept'], ['tradeDecline', 'tradeDecline'], ['tradeCancel', 'tradeCancel']]) {
+    const sel = `[data-${attr.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}]`;
+    const b = t.closest(sel);
+    if (b) {
+      const res = await act(type, { id: Number(b.dataset[attr]) });
+      if (res.ok && store.modal?.type === 'tradeView') closeModal();
+      if (res.ok && type === 'tradeAccept') toast('Trade done');
+      return;
+    }
+  }
+});
+document.addEventListener('input', (e) => {
+  const cash = e.target.closest('[data-trade-cash]');
+  if (cash && store.tradeDraft) store.tradeDraft[cash.dataset.tradeCash].cash = Math.max(0, Math.floor(Number(cash.value) || 0));
+});
+document.addEventListener('change', (e) => {
+  const jail = e.target.closest('[data-trade-jail]');
+  if (jail && store.tradeDraft) store.tradeDraft[jail.dataset.tradeJail].jailCards = Number(jail.value) || 0;
+});
+
 /* ---------- modal ---------- */
 function openModal(m) {
   store.modal = m;
@@ -426,7 +501,7 @@ function renderModal() {
   const m = store.modal;
   if (!m || !s) return closeModal();
   const card = $('#modalCard');
-  card.classList.toggle('wide', m.type === 'maps');
+  card.classList.toggle('wide', m.type === 'maps' || m.type === 'trade');
   const head = (title) => `<div class="modal-head"><h3>${title}</h3><button class="icon-btn" data-close type="button" aria-label="Close">${ICONS.close}</button></div>`;
 
   if (m.type === 'deed') {
@@ -441,6 +516,14 @@ function renderModal() {
           <strong>${escapeHtml(mp.name)}</strong><p>${escapeHtml(mp.description)}</p><p>${mp.sample.map(escapeHtml).join(', ')}…</p></button>`,
       )
       .join('')}</div>${isHost ? '' : '<p class="muted" style="margin:12px 0 0">Only the host can change the board.</p>'}</div>`;
+  } else if (m.type === 'trade') {
+    const html = tradeDialogHtml(s, head);
+    if (!html || s.status !== 'playing') return closeModal();
+    card.innerHTML = html;
+  } else if (m.type === 'tradeView') {
+    const t = s.trades.find((x) => x.id === m.id);
+    if (!t) return closeModal();
+    card.innerHTML = `${head(t.to === store.me ? 'Trade offer for you' : 'Trade offer')}<div class="modal-body">${tradeCardHtml(s, t)}</div>`;
   } else if (m.type === 'nothing') {
     const nt = store.nothing.nextTotal;
     if (!store.me) return closeModal();
@@ -510,7 +593,7 @@ function renderRoom(s, prev) {
   const room = $('#roomView');
   room.classList.toggle('in-game', s.status !== 'lobby');
   $('#inviteLink').value = inviteUrl();
-  $('#sideTab').textContent = s.status === 'lobby' ? 'Settings' : 'Properties';
+  $('#sideTab').textContent = s.status === 'lobby' ? 'Settings' : 'Trades';
 
   // Board (rebuilt only when the map changes)
   if (store.boardMapId !== s.map.id) {
@@ -578,7 +661,8 @@ function renderRoom(s, prev) {
   renderPlayers(s, prev, landDelay);
   renderSide(s);
   renderFeed();
-  if (store.modal) renderModal();
+  if (store.modal && store.modal.type !== 'trade') renderModal();
+  noticeTrades(s);
 
   // A little chime when it becomes your turn.
   if (prev && s.status === 'playing' && prev.turn && prev.turn.index !== s.turn.index && s.players[s.turn.index].id === store.me) {
@@ -800,7 +884,7 @@ const RULES = [
 
 function renderSide(s) {
   const isHost = s.hostId === store.me;
-  const key = JSON.stringify([s.status, s.settings, s.map.id, isHost, s.status === 'lobby' ? 0 : [s.properties, store.me]]);
+  const key = JSON.stringify([s.status, s.settings, s.map.id, isHost, store.me, s.status === 'lobby' ? 0 : [s.properties, s.trades, s.players.map((p) => [p.id, p.name, p.token, p.bankrupt, p.jailCards])]]);
   if (key === store.sideKey) return;
   store.sideKey = key;
   const el = $('#sidePanel');
@@ -821,34 +905,130 @@ function renderSide(s) {
     return;
   }
 
-  // In game: my properties grouped by colour set
-  const mine = Object.entries(s.properties).filter(([, pr]) => pr.owner && pr.owner === store.me);
-  if (!store.me) {
-    el.innerHTML = '<h2 class="panel-title">Properties</h2><p class="feed-empty">Tap any square on the board to see who owns it.</p>';
-    return;
-  }
-  if (!mine.length) {
-    el.innerHTML = '<h2 class="panel-title">Your properties</h2><p class="feed-empty">You don’t own anything yet. Land on a property to buy it.</p>';
-    return;
-  }
-  const groups = new Map();
-  for (const [idx, pr] of mine) {
-    const sp = s.map.spaces[idx];
-    const key = sp.group || sp.type;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push([idx, sp, pr]);
-  }
-  const labels = s.map.labels || {};
-  el.innerHTML = `<h2 class="panel-title">Your properties</h2>${[...groups]
-    .map(([key, items]) => {
-      const g = s.map.groups[key];
-      const name = g ? g.name : key === 'railroad' ? labels.railroad || 'Stations' : labels.utility || 'Utilities';
-      const color = g ? g.color : 'var(--muted)';
-      return `<div class="props-group" style="--g:${color}"><h4><i></i>${escapeHtml(name.charAt(0).toUpperCase() + name.slice(1))}</h4><div class="prop-chips">${items
-        .map(([idx, sp, pr]) => `<button type="button" class="prop-chip${pr.mortgaged ? ' mortgaged' : ''}" data-deed-open="${idx}">${escapeHtml(sp.name)}${pr.houses ? `<small>${pr.houses === 5 ? 'hotel' : `${pr.houses}h`}</small>` : ''}</button>`)
-        .join('')}</div></div>`;
+  // In game: trades, every player's properties, and the rule switches.
+  const me = s.players.find((p) => p.id === store.me);
+  const canTrade = s.status === 'playing' && me && !me.bankrupt;
+  const mineTrades = s.trades.filter((t) => t.from === store.me || t.to === store.me);
+  const otherTrades = s.trades.length - mineTrades.length;
+  const owners = [...s.players].sort((a, b) => (a.id === store.me ? -1 : b.id === store.me ? 1 : 0));
+  const ruleRow = ([k, icon, title, desc]) =>
+    `<div class="setting"><span class="row-icon">${ICONS[icon]}</span><div><div class="setting-title">${title}</div><div class="setting-desc">${desc}</div></div><button type="button" class="switch" role="switch" aria-checked="${!!s.settings[k]}" aria-label="${title}" data-setting="${k}" ${isHost && s.status === 'playing' ? '' : 'disabled'}></button></div>`;
+
+  el.innerHTML = `
+    <h2 class="panel-title">Trades</h2>
+    ${canTrade ? '<button type="button" class="btn btn-primary btn-block" data-open="trade">Create a trade</button>' : ''}
+    <div class="trade-list">
+      ${mineTrades.map((t) => tradeCardHtml(s, t)).join('') || `<p class="settings-note" style="margin:10px 0 0">${canTrade ? 'No trade offers right now.' : 'No trades right now.'}</p>`}
+      ${otherTrades ? `<p class="settings-note">${otherTrades} other offer${otherTrades > 1 ? 's' : ''} between players</p>` : ''}
+    </div>
+    <h3 class="settings-sep">Properties</h3>
+    ${owners.map((p) => ownerBlock(s, p, canTrade)).join('')}
+    <details class="rules-box" ${store.rulesOpen ? 'open' : ''}>
+      <summary>Gameplay rules${isHost ? '' : ' (host can change)'}</summary>
+      ${RULES.filter(([k]) => k !== 'randomizeOrder').map(ruleRow).join('')}
+    </details>`;
+  el.querySelector('.rules-box').addEventListener('toggle', (e) => (store.rulesOpen = e.target.open));
+}
+
+/** One player's properties with a count, grouped in board order. */
+function ownerBlock(s, p, canTrade) {
+  const owned = Object.entries(s.properties)
+    .filter(([, pr]) => pr.owner === p.id)
+    .map(([i, pr]) => [Number(i), pr])
+    .sort((a, b) => a[0] - b[0]);
+  const isMe = p.id === store.me;
+  const chips = owned
+    .map(([i, pr]) => {
+      const sp = s.map.spaces[i];
+      const color = sp.group ? s.map.groups[sp.group].color : 'var(--muted)';
+      const extra = pr.houses ? `<small>${pr.houses === 5 ? 'hotel' : `${pr.houses}h`}</small>` : '';
+      return `<button type="button" class="prop-chip${pr.mortgaged ? ' mortgaged' : ''}" style="--g:${color}" data-deed-open="${i}">${escapeHtml(sp.name)}${extra}</button>`;
     })
-    .join('')}<p class="setting-desc" style="text-align:center">Tap a property to build, sell or mortgage.</p>`;
+    .join('');
+  const tradeBtn = canTrade && !isMe && !p.bankrupt ? `<button type="button" class="link-btn" data-trade-with="${p.id}">Trade</button>` : '';
+  return `<div class="owner-block${p.bankrupt ? ' out' : ''}" style="--c:${tokenColor(p.token)}">
+    <div class="owner-head">${avatar(p.token)}<b>${isMe ? 'You' : escapeHtml(p.name)}</b><span class="count">${owned.length} propert${owned.length === 1 ? 'y' : 'ies'}</span>${tradeBtn}</div>
+    ${chips ? `<div class="prop-chips">${chips}</div>` : `<p class="setting-desc">${p.bankrupt ? 'Bankrupt' : 'No properties yet'}</p>`}
+  </div>`;
+}
+
+/** Items on one side of a trade. */
+function tradeItems(s, side) {
+  const items = [];
+  if (side.cash) items.push(`<span class="trade-item cash">${money(s.map, side.cash)}</span>`);
+  for (const i of side.properties) {
+    const sp = s.map.spaces[i];
+    const color = sp.group ? s.map.groups[sp.group].color : 'var(--muted)';
+    items.push(`<span class="trade-item" style="--g:${color}">${escapeHtml(sp.name)}</span>`);
+  }
+  if (side.jailCards) items.push(`<span class="trade-item">${side.jailCards} jail card${side.jailCards > 1 ? 's' : ''}</span>`);
+  return items.join('') || '<span class="trade-item none">Nothing</span>';
+}
+
+function tradeCardHtml(s, t) {
+  const from = s.players.find((p) => p.id === t.from);
+  const to = s.players.find((p) => p.id === t.to);
+  const nm = (p) => (p.id === store.me ? 'You' : escapeHtml(p.name));
+  let actions = `<p class="settings-note" style="margin:0">Waiting for ${nm(to)}</p>`;
+  if (t.to === store.me) {
+    actions = `<button type="button" class="btn btn-primary btn-sm" data-trade-accept="${t.id}">Accept</button><button type="button" class="btn btn-danger btn-sm" data-trade-decline="${t.id}">Decline</button>`;
+  } else if (t.from === store.me) {
+    actions = `<p class="settings-note" style="margin:0;flex:1;text-align:left">Waiting for ${nm(to)}</p><button type="button" class="btn btn-sm" data-trade-cancel="${t.id}">Cancel offer</button>`;
+  }
+  return `<div class="trade-card">
+    <div class="trade-head">${avatar(from.token)}<b>${nm(from)}</b><span class="muted">→</span>${avatar(to.token)}<b>${nm(to)}</b></div>
+    <div class="trade-cols">
+      <div><small>${nm(from)} give${from.id === store.me ? '' : 's'}</small><div class="trade-items">${tradeItems(s, t.give)}</div></div>
+      <div><small>${nm(to)} give${to.id === store.me ? '' : 's'}</small><div class="trade-items">${tradeItems(s, t.get)}</div></div>
+    </div>
+    <div class="trade-actions">${actions}</div>
+  </div>`;
+}
+
+/** The "Create a trade" dialog. */
+function newTradeDraft(to = null) {
+  return { to, give: { cash: 0, properties: new Set(), jailCards: 0 }, get: { cash: 0, properties: new Set(), jailCards: 0 } };
+}
+function tradeDialogHtml(s, head) {
+  const me = s.players.find((p) => p.id === store.me);
+  const others = s.players.filter((p) => p.id !== store.me && !p.bankrupt);
+  if (!me || !others.length) return null;
+  const d = store.tradeDraft || (store.tradeDraft = newTradeDraft());
+  if (!others.some((o) => o.id === d.to)) {
+    d.to = others[0].id;
+    d.get = newTradeDraft().get;
+  }
+  const them = others.find((o) => o.id === d.to);
+  const column = (who, key) => {
+    const side = d[key];
+    const owned = Object.entries(s.properties).filter(([, pr]) => pr.owner === who.id).map(([i, pr]) => [Number(i), pr]).sort((a, b) => a[0] - b[0]);
+    const props = owned
+      .map(([i, pr]) => {
+        const sp = s.map.spaces[i];
+        const color = sp.group ? s.map.groups[sp.group].color : 'var(--muted)';
+        const extra = pr.houses ? ` · ${pr.houses === 5 ? 'hotel' : `${pr.houses}h`}` : pr.mortgaged ? ' · mortgaged' : '';
+        return `<button type="button" class="trade-prop" data-trade-prop="${key}" data-space="${i}" aria-pressed="${side.properties.has(i)}" style="--g:${color}">${escapeHtml(sp.name)}<small>${extra}</small></button>`;
+      })
+      .join('');
+    const jail = who.jailCards
+      ? `<label class="trade-jail">Get Out of Jail Free cards <select class="select" data-trade-jail="${key}">${Array.from({ length: who.jailCards + 1 }, (_, n) => `<option ${n === side.jailCards ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`
+      : '';
+    return `<div class="trade-col">
+      <div class="trade-col-head">${avatar(who.token)}<b>${who.id === store.me ? 'You give' : `${escapeHtml(who.name)} gives`}</b><span>${money(s.map, who.cash)}</span></div>
+      <label class="trade-cash"><span>${escapeHtml(s.map.currency)}</span><input class="field" type="number" min="0" step="10" inputmode="numeric" placeholder="0" aria-label="Money" data-trade-cash="${key}" value="${side.cash || ''}" /></label>
+      <div class="trade-props">${props || '<p class="setting-desc" style="margin:0">No properties</p>'}</div>
+      ${jail}
+    </div>`;
+  };
+  const picker = others.length > 1
+    ? `<div class="trade-with">${others.map((o) => `<button type="button" class="look-btn" data-trade-to="${o.id}" aria-pressed="${o.id === d.to}">${avatar(o.token)}<span>${escapeHtml(o.name)}</span></button>`).join('')}</div>`
+    : '';
+  return `${head('New trade')}<div class="modal-body">
+    ${picker ? `<span class="label">Trade with</span>${picker}` : ''}
+    <div class="trade-grid">${column(me, 'give')}${column(them, 'get')}</div>
+    <p class="setting-desc" style="margin:-4px 0 12px">Pick anything from either side — money, properties (buildings go with them) or jail cards. ${escapeHtml(them.name)} can accept or decline.</p>
+    <div class="deed-actions"><button type="button" class="btn btn-primary" data-trade-send>Send offer to ${escapeHtml(them.name)}</button><button type="button" class="btn btn-ghost" data-close>Cancel</button></div>
+  </div>`;
 }
 
 /* chat + game events in one feed */

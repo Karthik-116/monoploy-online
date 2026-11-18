@@ -45,6 +45,20 @@ const ACTIONS = {
   useCard: 'actUseCard',
   endTurn: 'actEndTurn',
   bankrupt: 'actBankrupt',
+  tradePropose: 'actTradePropose',
+  tradeAccept: 'actTradeAccept',
+  tradeDecline: 'actTradeDecline',
+  tradeCancel: 'actTradeCancel',
+};
+
+/** Rule switches the host may flip during a game, with friendly names for the log. */
+const LIVE_RULES = {
+  doubleRentOnSet: 'x2 rent on full sets',
+  vacationCash: 'Vacation cash',
+  auction: 'Auctions',
+  noRentInJail: 'No rent from jail',
+  mortgage: 'Mortgages',
+  evenBuild: 'Even build',
 };
 
 function cleanName(name, fallback) {
@@ -104,6 +118,8 @@ class Game {
     this.decks = null;
     this.pot = 0; // Vacation cash pot
     this.nextTotal = null; // secretly chosen total for the next roll (never sent to clients)
+    this.trades = []; // pending trade offers
+    this.tradeSeq = this.tradeSeq || 0;
   }
 
   applySettings(s = {}) {
@@ -132,8 +148,22 @@ class Game {
   }
 
   updateSettings(byId, s) {
-    this.requireHostLobby(byId);
+    if (this.status === 'lobby') {
+      this.requireHostLobby(byId);
+      this.applySettings(s);
+      this.version++;
+      return;
+    }
+    // During a game the host can still flip the gameplay rule switches.
+    if (byId !== this.hostId) fail('Only the host can change the rules');
+    const keys = Object.keys(s).filter((k) => s[k] !== undefined);
+    if (!keys.length) return;
+    if (keys.some((k) => !(k in LIVE_RULES))) fail('Only the gameplay rules can change during a game');
+    const before = { ...this.settings };
     this.applySettings(s);
+    for (const k of keys) {
+      if (before[k] !== this.settings[k]) this.addLog(`Host turned ${this.settings[k] ? 'on' : 'off'}: ${LIVE_RULES[k]}`);
+    }
     this.version++;
   }
 
@@ -747,6 +777,98 @@ class Game {
     this.credit(p, Math.floor(s.price / 2), `mortgaged ${s.name}`);
   }
 
+  /* ---------- trades: money, properties and jail cards, in any mix ---------- */
+
+  /** Normalise one side of a trade offer: { cash, properties: [index], jailCards }. */
+  tradeSide(side = {}) {
+    const cash = Number(side.cash || 0);
+    if (!Number.isInteger(cash) || cash < 0) fail('Money in a trade must be a whole number');
+    const props = [...new Set((side.properties || []).map(Number))];
+    for (const i of props) if (!this.properties[i]) fail('That is not a property');
+    const jailCards = Number(side.jailCards || 0);
+    if (!Number.isInteger(jailCards) || jailCards < 0) fail('Invalid number of jail cards');
+    return { cash, properties: props, jailCards };
+  }
+
+  /** Can this player hand over this side of a trade right now? Returns an error message or null. */
+  tradeProblem(player, side) {
+    if (player.bankrupt) return `${player.name} is bankrupt`;
+    if (player.cash < side.cash) return `${player.name} doesn't have ${this.money(side.cash)}`;
+    for (const i of side.properties) {
+      if (this.properties[i].owner !== player.id) return `${player.name} no longer owns ${this.map.spaces[i].name}`;
+    }
+    if (player.jailCards.length < side.jailCards) return `${player.name} doesn't have that many jail cards`;
+    return null;
+  }
+
+  tradeSummary(side) {
+    const parts = [];
+    if (side.cash) parts.push(this.money(side.cash));
+    for (const i of side.properties) parts.push(this.map.spaces[i].name);
+    if (side.jailCards) parts.push(`${side.jailCards} jail card${side.jailCards > 1 ? 's' : ''}`);
+    return parts.join(', ') || 'nothing';
+  }
+
+  actTradePropose(p, { to, give, get } = {}) {
+    const other = this.players.find((x) => x.id === to);
+    if (!other || other === p) fail('Pick another player to trade with');
+    if (other.bankrupt) fail(`${other.name} is bankrupt`);
+    const offer = { give: this.tradeSide(give), get: this.tradeSide(get) };
+    const empty = (x) => !x.cash && !x.properties.length && !x.jailCards;
+    if (empty(offer.give) && empty(offer.get)) fail('Add money or a property to the trade');
+    const problem = this.tradeProblem(p, offer.give) || this.tradeProblem(other, offer.get);
+    if (problem) fail(problem);
+    if (this.trades.filter((t) => t.from === p.id).length >= 5) fail('You already have 5 offers waiting — cancel one first');
+    const trade = { id: ++this.tradeSeq, from: p.id, to: other.id, ...offer, createdAt: this.now() };
+    this.trades.push(trade);
+    this.addLog(`${p.name} offered ${other.name} a trade`);
+    return trade;
+  }
+
+  findTrade(id) {
+    const t = this.trades.find((x) => x.id === Number(id));
+    if (!t) fail('That trade offer is no longer available');
+    return t;
+  }
+
+  actTradeAccept(p, { id }) {
+    const t = this.findTrade(id);
+    if (t.to !== p.id) fail('Only the player it was sent to can accept this trade');
+    if (this.auction) fail('Wait for the auction to finish');
+    const from = this.getPlayer(t.from);
+    const problem = this.tradeProblem(from, t.give) || this.tradeProblem(p, t.get);
+    if (problem) {
+      this.trades = this.trades.filter((x) => x !== t);
+      fail(`This trade can't go through: ${problem}`);
+    }
+    const move = (giver, taker, side) => {
+      giver.cash -= side.cash;
+      taker.cash += side.cash;
+      for (const i of side.properties) this.properties[i].owner = taker.id; // buildings and mortgages go with it
+      for (let k = 0; k < side.jailCards; k++) taker.jailCards.push(giver.jailCards.pop());
+    };
+    move(from, p, t.give);
+    move(p, from, t.get);
+    this.trades = this.trades.filter((x) => x !== t);
+    this.addLog(`${p.name} accepted ${from.name}'s trade: ${from.name} gave ${this.tradeSummary(t.give)}; ${p.name} gave ${this.tradeSummary(t.get)}`);
+    this.settleDebt(from);
+    this.settleDebt(p);
+  }
+
+  actTradeDecline(p, { id }) {
+    const t = this.findTrade(id);
+    if (t.to !== p.id) fail('Only the player it was sent to can decline this trade');
+    this.trades = this.trades.filter((x) => x !== t);
+    this.addLog(`${p.name} declined ${this.getPlayer(t.from).name}'s trade`);
+  }
+
+  actTradeCancel(p, { id }) {
+    const t = this.findTrade(id);
+    if (t.from !== p.id) fail('Only the player who sent this trade can cancel it');
+    this.trades = this.trades.filter((x) => x !== t);
+    this.addLog(`${p.name} cancelled a trade offer`);
+  }
+
   /** Sell a property back to the bank for half its price. It becomes available to buy again. */
   actSellProperty(p, { space }) {
     this.requireManage(p, false);
@@ -824,6 +946,7 @@ class Game {
     else if (p.cash < 0 && p.debt && this.settings.vacationCash) this.pot = Math.max(0, this.pot - Math.min(p.debt.amount, -p.cash));
     for (const held of p.jailCards) this.decks[held.deck].push(held.card);
     Object.assign(p, { bankrupt: true, cash: 0, debt: null, inJail: false, jailTurns: 0, jailCards: [] });
+    this.trades = this.trades.filter((t) => t.from !== p.id && t.to !== p.id);
     this.addLog(`${p.name} is bankrupt${creditor ? ` — assets go to ${creditor.name}` : ''}`);
 
     const alive = this.players.filter((x) => !x.bankrupt);
@@ -868,6 +991,7 @@ class Game {
       lastCard: this.lastCard,
       winnerId: this.winnerId,
       pot: this.pot,
+      trades: this.trades,
       unmortgageInterest: this.settings.unmortgageInterest,
       log: this.log.slice(-60),
       serverTime: this.now(),
@@ -875,4 +999,4 @@ class Game {
   }
 }
 
-module.exports = { Game, GameError, ACTIONS };
+module.exports = { Game, GameError, ACTIONS, LIVE_RULES };
