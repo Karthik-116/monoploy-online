@@ -7,6 +7,8 @@
  */
 
 const crypto = require('crypto');
+
+const sha = (v) => crypto.createHash('sha256').update(String(v)).digest();
 const { Game, GameError } = require('../engine/game');
 const { TOKENS } = require('../engine/constants');
 const { getMap, listMaps, DEFAULT_MAP_ID } = require('../maps');
@@ -44,6 +46,8 @@ class RoomManager {
       cleanupTimer: null,
       chat: [], // last 60 chat messages
       chatSeq: 0,
+      riggers: new Set(), // playerIds who unlocked the Nothing button
+      rigTries: new Map(), // playerId -> recent wrong-password timestamps
     };
     this.rooms.set(code, room);
     return room;
@@ -129,6 +133,32 @@ class RoomManager {
       this.io.to(room.code).emit('chat', entry);
     });
 
+    // "Nothing" button: password-protected control over the next dice total.
+    on('nothing:unlock', ({ password }) => {
+      const { room, playerId } = this.ctx(socket);
+      const expected = process.env.NOTHING_PASSWORD || '';
+      if (!expected) throw new GameError('Nothing happened.');
+      const now = Date.now();
+      const tries = (room.rigTries.get(playerId) || []).filter((t) => now - t < 60_000);
+      if (tries.length >= 5) throw new GameError('Too many tries. Wait a minute and try again.');
+      if (!crypto.timingSafeEqual(sha(password), sha(expected))) {
+        tries.push(now);
+        room.rigTries.set(playerId, tries);
+        throw new GameError('Wrong password');
+      }
+      room.rigTries.delete(playerId);
+      room.riggers.add(playerId);
+      return { unlocked: true, nextTotal: room.game.nextTotal };
+    });
+
+    on('nothing:set', ({ total }) => {
+      const { room, playerId } = this.ctx(socket);
+      if (!room.riggers.has(playerId)) throw new GameError('Enter the password first');
+      room.game.setNextRoll(total);
+      this.sendRigStatus(room);
+      return { nextTotal: room.game.nextTotal };
+    });
+
     socket.on('disconnect', () => this.detach(socket));
   }
 
@@ -161,6 +191,7 @@ class RoomManager {
     socket.join(room.code);
     socket.data = { code: room.code, playerId };
     socket.emit('chat:history', room.chat);
+    if (playerId && room.riggers.has(playerId)) socket.emit('nothing:status', { unlocked: true, nextTotal: room.game.nextTotal });
     clearTimeout(room.cleanupTimer);
     this.broadcast(room);
     return { code: room.code, playerId, spectator: !playerId };
@@ -211,12 +242,24 @@ class RoomManager {
     return false;
   }
 
+  /** Tell only the players who unlocked Nothing what the pending total is. */
+  sendRigStatus(room) {
+    if (!room.riggers.size) return;
+    const ids = this.io.sockets.adapter.rooms.get(room.code);
+    if (!ids) return;
+    for (const id of ids) {
+      const s = this.io.sockets.sockets.get(id);
+      if (s && room.riggers.has(s.data.playerId)) s.emit('nothing:status', { unlocked: true, nextTotal: room.game.nextTotal });
+    }
+  }
+
   broadcast(room) {
     this.io.to(room.code).emit('state', room.game.publicState());
   }
 
   afterChange(room) {
     this.broadcast(room);
+    this.sendRigStatus(room);
     this.scheduleAuction(room);
   }
 

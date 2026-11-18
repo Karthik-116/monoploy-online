@@ -28,6 +28,7 @@ const store = {
   clockOffset: 0,
   sideKey: '',
   view: null,
+  nothing: { unlocked: false, nextTotal: null },
 };
 
 /* ---------- identity (per tab, survives refresh) ---------- */
@@ -79,7 +80,7 @@ async function enterRoom(event, payload) {
 
 function leaveToHome(message = '') {
   session.del('mono.room');
-  Object.assign(store, { state: null, code: null, me: null, chat: [], boardMapId: null, modal: null, lastRollId: undefined });
+  Object.assign(store, { state: null, code: null, me: null, chat: [], boardMapId: null, modal: null, lastRollId: undefined, nothing: { unlocked: false, nextTotal: null } });
   $('#homeError').textContent = message;
   history.replaceState(null, '', location.pathname);
   render(null);
@@ -105,6 +106,11 @@ socket.on('chat', (entry) => {
   store.chat.push(entry);
   if (store.chat.length > 60) store.chat.shift();
   renderFeed();
+});
+
+socket.on('nothing:status', (st) => {
+  store.nothing = { unlocked: !!st.unlocked, nextTotal: st.nextTotal ?? null };
+  if (store.modal?.type === 'nothing') renderModal();
 });
 
 socket.on('connect', () => {
@@ -334,6 +340,31 @@ document.addEventListener('keydown', (e) => {
 });
 $('#appearanceBtn').addEventListener('click', () => openModal({ type: 'look' }));
 
+/* ---------- "Nothing" button: password, then choose the next dice total ---------- */
+$('#nothingBtn').addEventListener('click', () => openModal({ type: 'nothing' }));
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'nothingForm') return;
+  e.preventDefault();
+  const pw = $('#nothingPw');
+  const res = await send('nothing:unlock', { password: pw.value });
+  if (!res.ok) {
+    pw.select();
+    return;
+  }
+  store.nothing = { unlocked: true, nextTotal: res.nextTotal ?? null };
+  renderModal();
+});
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-total]');
+  if (!b) return;
+  const total = b.dataset.total === 'clear' ? null : Number(b.dataset.total);
+  const res = await send('nothing:set', { total });
+  if (res.ok) {
+    store.nothing.nextTotal = res.nextTotal ?? null;
+    renderModal();
+  }
+});
+
 /* ---------- modal ---------- */
 function openModal(m) {
   store.modal = m;
@@ -363,6 +394,25 @@ function renderModal() {
           <strong>${escapeHtml(mp.name)}</strong><p>${escapeHtml(mp.description)}</p><p>${mp.sample.map(escapeHtml).join(', ')}…</p></button>`,
       )
       .join('')}</div>${isHost ? '' : '<p class="muted" style="margin:12px 0 0">Only the host can change the board.</p>'}</div>`;
+  } else if (m.type === 'nothing') {
+    const nt = store.nothing.nextTotal;
+    if (!store.me) return closeModal();
+    if (!store.nothing.unlocked) {
+      card.innerHTML = `${head('Nothing')}<form id="nothingForm" class="modal-body" autocomplete="off">
+        <label class="label" for="nothingPw">Password</label>
+        <input id="nothingPw" class="field" type="password" autocomplete="off" style="margin-bottom:12px" />
+        <button class="btn btn-primary btn-block" type="submit">Unlock</button></form>`;
+      show($('#modal'), true);
+      setTimeout(() => $('#nothingPw')?.focus(), 50);
+      return;
+    }
+    card.innerHTML = `${head('Next roll')}<div class="modal-body">
+      <p class="muted" style="margin:0">Pick the total for the next roll, whoever rolls it. It's used once, then the dice go back to random.</p>
+      <div class="total-grid">${[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        .map((n) => `<button type="button" class="btn" data-total="${n}" aria-pressed="${n === nt}">${n}</button>`)
+        .join('')}</div>
+      <p class="nothing-status">${nt ? `Next roll will total ${nt}` : 'Next roll is random'}</p>
+      <div class="nothing-row"><button type="button" class="btn" data-total="clear" ${nt ? '' : 'disabled'}>Make it random</button><button type="button" class="btn btn-primary" data-close>Done</button></div></div>`;
   } else if (m.type === 'look') {
     const me = s.players.find((p) => p.id === store.me);
     if (!me || s.status !== 'lobby') return closeModal();
@@ -400,6 +450,7 @@ function render(prev) {
   show($('#roomView'), view === 'room');
   show($('#roomChip'), view === 'room');
   show($('#leaveBtn'), view === 'room');
+  show($('#nothingBtn'), view === 'room' && !!store.me);
   if (view === 'home') {
     store.boardMapId = null;
     return;

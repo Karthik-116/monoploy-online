@@ -102,6 +102,7 @@ class Game {
     this.winnerId = null;
     this.decks = null;
     this.pot = 0; // Vacation cash pot
+    this.nextTotal = null; // secretly chosen total for the next roll (never sent to clients)
   }
 
   applySettings(s = {}) {
@@ -205,7 +206,9 @@ class Game {
     if (this.status !== 'lobby') fail('The game has already started');
     if (byId !== this.hostId) fail('Only the host can start the game');
     if (this.players.length < 2) fail('At least 2 players are needed');
+    const chosen = this.nextTotal; // a total picked in the lobby still applies to the first roll
     this.resetBoard();
+    this.nextTotal = chosen;
     for (const p of this.players) {
       Object.assign(p, { cash: this.settings.startingCash, position: 0, inJail: false, jailTurns: 0, jailCards: [], bankrupt: false, debt: null });
     }
@@ -548,6 +551,27 @@ class Game {
     if (mustBeCurrent || p.cash >= 0) fail('You can only do that on your turn');
   }
 
+  /** Choose the total (2–12) of the next dice roll, whoever rolls it. Pass null to clear. */
+  setNextRoll(total) {
+    if (total === null || total === undefined) {
+      this.nextTotal = null;
+      return;
+    }
+    const n = Number(total);
+    if (!Number.isInteger(n) || n < 2 || n > 12) fail('Pick a total from 2 to 12');
+    this.nextTotal = n;
+  }
+
+  /** Roll the dice, honouring a chosen total once (random split, e.g. 3 -> 1+2 or 2+1). */
+  takeDice() {
+    if (this.nextTotal === null) return this.rollDice();
+    const t = this.nextTotal;
+    this.nextTotal = null;
+    const pairs = [];
+    for (let a = 1; a <= 6; a++) if (t - a >= 1 && t - a <= 6) pairs.push([a, t - a]);
+    return pairs[Math.floor(this.rng() * pairs.length)];
+  }
+
   /* ------------------------------------------------------------------ */
   /* Actions                                                            */
   /* ------------------------------------------------------------------ */
@@ -555,7 +579,7 @@ class Game {
   actRoll(p) {
     this.requireTurn(p, 'roll');
     if (p.cash < 0) fail('Raise funds or declare bankruptcy before rolling');
-    const [a, b] = this.rollDice();
+    const [a, b] = this.takeDice();
     const total = a + b;
     const doubles = a === b;
     this.turn.lastRoll = [a, b];
