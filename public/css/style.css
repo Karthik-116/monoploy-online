@@ -325,6 +325,9 @@ button { cursor: pointer; }
 .turn-clock.warn i { background: conic-gradient(var(--bad) calc(var(--p, 1) * 1turn), var(--line) 0); }
 .away-note { color: var(--bad); font-weight: 700; }
 .grant-btn { margin-top: 4px; padding: 0.2rem 0.55rem; font-size: 0.78rem; }
+.row-trade { margin: 4px 0 0; padding: 0.2rem 0.6rem; font-size: 0.78rem; }
+.grant-btn + .row-trade { margin-left: 6px; }
+.actions .trade-open { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 
 /* centre of the board */
 .center {
@@ -584,7 +587,9 @@ button { cursor: pointer; }
   font-size: 0.85rem; font-weight: 700; box-shadow: inset 3px 0 0 var(--g); transition: background 0.15s, border-color 0.15s;
 }
 .trade-prop small { color: var(--muted); font-weight: 700; }
-.trade-prop[aria-pressed='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 24%, var(--panel)); }
+.trade-prop[aria-pressed='true'] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.trade-prop[aria-pressed='true']::before { content: '✓ '; font-weight: 800; }
+.trade-prop[aria-pressed='true'] small { color: inherit; opacity: 0.75; }
 .trade-jail { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 0.85rem; font-weight: 700; }
 
 /* every player's properties */

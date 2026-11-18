@@ -737,6 +737,8 @@ function renderCenter(s) {
           out.push(btn('endTurn', 'End turn', 'btn-primary btn-lg', me.cash < 0));
         }
       }
+      const tradePartners = s.players.some((p) => p.id !== me.id && !p.bankrupt);
+      if (tradePartners) out.push('<button type="button" class="btn trade-open" data-open="trade">⇄ Trade</button>');
       if ((myTurn || me.cash < 0) && !s.auction) {
         out.push(btn('bankrupt', store.bankruptArmed ? 'Tap again to go bankrupt' : 'Bankrupt', 'btn-danger btn-sm'));
       }
@@ -881,11 +883,13 @@ function renderPlayers(s, prev, floatDelay) {
       const meP = s.players.find((x) => x.id === store.me);
       const canGrant = s.status === 'playing' && p.awayDeadline && !p.bankrupt && meP && !meP.bankrupt && meP.id !== p.id && !(p.grantedBy || []).includes(meP.id);
       const grant = canGrant ? `<button type="button" class="btn btn-sm grant-btn" data-grant="${p.id}">+2 min</button>` : '';
+      const canTradeWith = s.status === 'playing' && meP && !meP.bankrupt && meP.id !== p.id && !p.bankrupt;
+      const tradeRow = canTradeWith ? `<button type="button" class="btn btn-sm row-trade" data-trade-with="${p.id}" aria-label="Trade with ${escapeHtml(p.name)}">⇄ Trade</button>` : '';
       const isTurn = s.status === 'playing' && s.turn.index === i;
       const host = p.id === s.hostId ? `<span class="crown">${ICONS.crown}Host</span>` : '';
       return `<li class="player${isTurn ? ' turn' : ''}${p.bankrupt ? ' out' : ''}${p.connected ? '' : ' offline'}" style="--c:${tokenColor(p.token)}" data-pid="${p.id}">
         ${avatar(p.token)}
-        <div style="min-width:0"><div class="player-name"><span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</span>${host}</div>${sub.length ? `<div class="player-sub">${sub.join(' · ')}</div>` : ''}${grant}</div>
+        <div style="min-width:0"><div class="player-name"><span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</span>${host}</div>${sub.length ? `<div class="player-sub">${sub.join(' · ')}</div>` : ''}${grant}${tradeRow}</div>
         ${inGame ? `<div class="player-cash${p.cash < 0 ? ' neg' : ''}">${money(s.map, p.cash)}</div>` : ''}
       </li>`;
     })
@@ -1062,7 +1066,7 @@ function tradeDialogHtml(s, head) {
       ${jail}
     </div>`;
   };
-  const picker = others.length > 1
+  const picker = others.length >= 1
     ? `<div class="trade-with">${others.map((o) => `<button type="button" class="look-btn" data-trade-to="${o.id}" aria-pressed="${o.id === d.to}">${avatar(o.token)}<span>${escapeHtml(o.name)}</span></button>`).join('')}</div>`
     : '';
   return `${head('New trade')}<div class="modal-body">
