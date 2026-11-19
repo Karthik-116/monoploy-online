@@ -113,3 +113,25 @@ test('selling a property can clear a debt', () => {
   assert.equal(p('p0').cash, 197);
   game.act('p0', 'endTurn');
 });
+
+test('landing exactly on GO pays 400; passing it pays 200', () => {
+  const { game, dice, p } = setup({ settings: { auction: false } });
+  p('p0').position = 36;
+  dice.push([1, 3]); // 36 -> 0, lands on GO
+  game.act('p0', 'roll');
+  assert.equal(p('p0').position, 0);
+  assert.equal(p('p0').cash, 1900);
+  game.act('p0', 'endTurn');
+  p('p1').position = 38;
+  dice.push([1, 2]); // 38 -> 1, passes GO
+  game.act('p1', 'roll');
+  assert.equal(p('p1').cash, 1700);
+});
+
+test('double pay on GO can be switched off', () => {
+  const { game, dice, p } = setup({ settings: { landOnGoBonus: false } });
+  p('p0').position = 36;
+  dice.push([1, 3]);
+  game.act('p0', 'roll');
+  assert.equal(p('p0').cash, 1700);
+});

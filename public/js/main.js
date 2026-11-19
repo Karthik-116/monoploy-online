@@ -928,6 +928,7 @@ const RULES = [
   ['noRentInJail', 'lock', 'No rent from jail', 'Owners in jail don’t collect rent'],
   ['mortgage', 'bank', 'Mortgage', 'Borrow half a property’s price; mortgaged properties earn no rent'],
   ['evenBuild', 'building', 'Even build', 'Houses and hotels go up and come down evenly across a set'],
+  ['landOnGoBonus', 'cash', 'Double pay on GO', 'Landing exactly on GO pays 400 instead of 200'],
   ['randomizeOrder', 'shuffle', 'Random turn order', 'Shuffle who goes first when the game starts'],
 ];
 

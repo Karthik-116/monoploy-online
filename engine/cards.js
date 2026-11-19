@@ -11,7 +11,7 @@
  */
 
 const CHANCE = [
-  { text: 'Advance to {target}. Collect {cur}200.', action: 'advance', target: { type: 'go', nth: 0 } },
+  { text: 'Advance to {target} and collect your salary.', action: 'advance', target: { type: 'go', nth: 0 } },
   { text: 'Advance to {target}. If you pass GO, collect {cur}200.', action: 'advance', target: { type: 'street', nth: 13 } },
   { text: 'Advance to {target}.', action: 'advance', target: { type: 'street', nth: -1 } },
   { text: 'Advance to {target}. If you pass GO, collect {cur}200.', action: 'advance', target: { type: 'street', nth: 5 } },
@@ -30,7 +30,7 @@ const CHANCE = [
 ];
 
 const CHEST = [
-  { text: 'Advance to {target}. Collect {cur}200.', action: 'advance', target: { type: 'go', nth: 0 } },
+  { text: 'Advance to {target} and collect your salary.', action: 'advance', target: { type: 'go', nth: 0 } },
   { text: 'Bank error in your favour. Collect {cur}200.', action: 'collect', amount: 200 },
   { text: "Doctor's fees: pay {cur}50.", action: 'pay', amount: 50 },
   { text: 'From sale of stock you get {cur}50.', action: 'collect', amount: 50 },

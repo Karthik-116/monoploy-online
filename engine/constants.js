@@ -21,10 +21,11 @@ const DEFAULT_SETTINGS = Object.freeze({
   mortgage: true, // mortgaging allowed
   evenBuild: true, // houses built/sold evenly across a set
   randomizeOrder: false, // shuffle turn order at the start
+  landOnGoBonus: true, // landing exactly on GO pays double (400 instead of 200)
 });
 
 /** Settings that are simple on/off switches. */
-const BOOL_SETTINGS = ['doubleRentOnSet', 'vacationCash', 'auction', 'noRentInJail', 'mortgage', 'evenBuild', 'randomizeOrder'];
+const BOOL_SETTINGS = ['doubleRentOnSet', 'vacationCash', 'auction', 'noRentInJail', 'mortgage', 'evenBuild', 'randomizeOrder', 'landOnGoBonus'];
 
 /** Space types that can be bought and owned. */
 const OWNABLE = new Set(['street', 'railroad', 'utility']);

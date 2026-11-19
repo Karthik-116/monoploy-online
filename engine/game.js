@@ -60,6 +60,7 @@ const LIVE_RULES = {
   noRentInJail: 'No rent from jail',
   mortgage: 'Mortgages',
   evenBuild: 'Even build',
+  landOnGoBonus: 'Double pay on GO',
 };
 
 function cleanName(name, fallback) {
@@ -400,12 +401,12 @@ class Game {
   moveBy(p, steps) {
     const len = this.map.spaces.length;
     const next = p.position + steps;
-    if (next >= len) this.credit(p, this.settings.goSalary, 'passed GO');
+    if (next >= len) this.credit(p, this.settings.goSalary, next % len === 0 ? 'landed on GO' : 'passed GO');
     p.position = next % len;
   }
 
   moveTo(p, index, collectGo = true) {
-    if (collectGo && index < p.position) this.credit(p, this.settings.goSalary, 'passed GO');
+    if (collectGo && index < p.position) this.credit(p, this.settings.goSalary, index === 0 ? 'landed on GO' : 'passed GO');
     p.position = index;
   }
 
@@ -465,6 +466,10 @@ class Game {
         }
         break;
       }
+      case 'go':
+        // Landing exactly on GO pays the salary twice (it was already paid on the way in).
+        if (this.settings.landOnGoBonus) this.credit(p, this.settings.goSalary, 'GO landing bonus');
+        break;
       case 'parking':
         if (this.settings.vacationCash && this.pot > 0) {
           const pot = this.pot;

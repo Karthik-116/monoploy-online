@@ -138,9 +138,9 @@ Themes are per player, saved in the browser, and switched from the palette butto
 
 ## Rules notes
 
-Implemented: GO salary, dice and doubles, three-doubles jail, jail (pay fine, card, or roll doubles; forced fine on the third failed roll), buying, auctions, street/station/utility rent (doubled rent on unimproved full sets), even building and selling of houses and hotels, mortgages with 10% interest to lift, taxes, 32 Chance / Community Chest cards, debt, bankruptcy to a player or the bank, and a winner.
+Implemented: GO salary (200 for passing, 400 for landing exactly on GO — switchable), dice and doubles, three-doubles jail, jail (pay fine, card, or roll doubles; forced fine on the third failed roll), buying, auctions, street/station/utility rent (doubled rent on unimproved full sets), even building and selling of houses and hotels, mortgages with 10% interest to lift, taxes, 32 Chance / Community Chest cards, debt, bankruptcy to a player or the bank, and a winner.
 
-Host-switchable rules (lobby → Game settings, and during a game under Gameplay rules except random order): x2 rent on full sets, vacation cash (taxes and bank fees go to a pot paid out on Free Parking), auctions, no rent while the owner is in jail, mortgages, even building, and random turn order.
+Host-switchable rules (lobby → Game settings, and during a game under Gameplay rules except random order): x2 rent on full sets, vacation cash (taxes and bank fees go to a pot paid out on Free Parking), double pay on GO (400 for landing exactly on it), auctions, no rent while the owner is in jail, mortgages, even building, and random turn order.
 
 Deliberate simplifications: unlimited houses and hotels (no building shortage), and mortgaged properties passed on in bankruptcy carry no extra 10% fee. The "nearest utility" card uses the roll you just made rather than a fresh roll.
 
@@ -152,7 +152,7 @@ Deliberate simplifications: unlimited houses and hotels (no building shortage), 
 | `room:join` | `{ code, name, secret }` |
 | `room:leave` | – |
 | `lobby:update` | `{ name?, token? }` — `token` is a colour id: red, orange, yellow, green, teal, blue, purple, pink |
-| `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash?, doubleRentOnSet?, vacationCash?, auction?, noRentInJail?, mortgage?, evenBuild?, randomizeOrder? }` |
+| `lobby:settings` (host) | `{ mapId?, maxPlayers?, startingCash?, doubleRentOnSet?, vacationCash?, auction?, noRentInJail?, mortgage?, evenBuild?, randomizeOrder?, landOnGoBonus? }` |
 | `chat:send` | `{ text }` |
 | `game:start` / `game:restart` (host) | – |
 | `game:action` | `{ type, payload }` — `roll`, `buy`, `auction`, `bid {amount}`, `pass`, `build {space}`, `sell {space}`, `sellProperty {space}`, `mortgage {space}`, `unmortgage {space}`, `payFine`, `useCard`, `endTurn`, `bankrupt`, `tradePropose {to, give, get}`, `tradeAccept {id}`, `tradeDecline {id}`, `tradeCancel {id}`, `grantTime {target}` — a trade side is `{ cash, properties: [spaceIndex], jailCards }` |

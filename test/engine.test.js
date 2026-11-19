@@ -254,12 +254,12 @@ test.describe('jail', () => {
 });
 
 test.describe('cards, building, bankruptcy', () => {
-  test('chance card: advance to GO collects salary', () => {
+  test('chance card: advance to GO counts as landing on GO', () => {
     const { game, dice, p } = setup();
     dice.push([3, 4]); // -> 7 Chance; unshuffled deck: "Advance to GO"
     game.act('p0', 'roll');
     assert.equal(p('p0').position, 0);
-    assert.equal(p('p0').cash, 1700);
+    assert.equal(p('p0').cash, 1900);
     assert.match(game.lastCard.text, /Advance to GO/);
   });
 

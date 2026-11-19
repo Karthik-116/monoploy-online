@@ -123,6 +123,11 @@ export function fitNames(board) {
 
 /** Ownership, buildings and highlights. Returns indices that were just bought. */
 export function updateTiles(board, state, prevOwners) {
+  const goSub = board.querySelector('.tile.type-go .tile-sub');
+  if (goSub) {
+    const sal = state.settings.goSalary;
+    goSub.textContent = state.settings.landOnGoBonus ? `Land ${money(state.map, sal * 2)} · pass ${money(state.map, sal)}` : `Collect ${money(state.map, sal)}`;
+  }
   const highlight = state.auction ? state.auction.space : state.turn && state.turn.phase === 'buy' ? state.turn.pendingSpace : null;
   const bought = [];
   state.map.spaces.forEach((s, i) => {
@@ -170,7 +175,9 @@ export function deedHtml(state, i, meId) {
 
   if (!prop) {
     const info = {
-      go: `Collect ${m(state.settings.goSalary)} every time you pass.`,
+      go: state.settings.landOnGoBonus
+        ? `Collect ${m(state.settings.goSalary)} when you pass, or ${m(state.settings.goSalary * 2)} if you land exactly on it.`
+        : `Collect ${m(state.settings.goSalary)} every time you pass or land here.`,
       jail: 'Just visiting — unless you were sent here.',
       parking: state.settings.vacationCash ? `Land here to collect the vacation pot: ${m(state.pot || 0)}.` : 'Take a breather. Nothing happens here.',
       gotojail: 'Go straight to jail. You do not pass GO.',
